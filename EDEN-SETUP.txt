@@ -1,0 +1,1042 @@
+IMPLEMENTATION NOTE
+===================
+This document contains the three design pieces (blueprint, bootstrapper, and
+indexer) for reference. The canonical implementation in this repository is
+the root `AGENTS.md`, `.eden/` control plane, `init-eden.sh`,
+`init-eden.ps1`, and `scripts/eden-audit.py` plus `scripts/eden-index.py`.
+When an embedded example differs from those files, use the repository files.
+
+To stop AI coding agents from hallucinating duplicate utilities, ignoring hardware limits, or losing the plot across sessions, we need to turn the **E.D.E.N. Protocol** from passive documentation into an **active, state-driven filesystem harness**.
+
+Because every model (Claude, DeepSeek, GPT, local models via `llama.cpp`) reads files from disk, a **Markdown + JSON/JSONL control plane** is 100% provider-agnostic. Whether you are using Claude Code, Aider, Cursor, or a custom Python orchestrator, the agent is forced to interact with the exact same source of truth.
+
+## 1. The Repository Blueprint (`eden-scaffold`)
+
+Instead of hoping an agent remembers a massive prompt, we split the cognitive load into specialized files that correspond directly to the E.D.E.N. execution loop:
+
+```text
+project-root/
+├── AGENTS.md                  # The Master Router & E.D.E.N. Law (Read First)
+├── .eden/
+│   ├── REGISTRY.md            # Anti-Duplication Component & Dependency Map
+│   ├── ARCHITECTURE.md        # System constraints, hardware ceiling, & data flow
+│   ├── PLAN.md                # Active task queue & strict scope definition
+│   ├── CHANGELOG_AGENT.jsonl  # Append-only audit log of every file touched
+│   └── LEARNINGS.md           # Persistent memory of bugs, quirks, and fixes
+└── scripts/
+    └── eden-audit.py          # Zero-dependency script to verify registry & dead code
+
+```
+
+---
+
+## 2. The Core Template Files
+
+### `AGENTS.md` (The Master Router & Entrypoint)
+
+To remain model-agnostic, keep all core logic in `AGENTS.md` and use a quick bootstrap script to symlink `.cursorrules`, `CLAUDE.md`, and `.aider.conf.yml` to it. This file acts as a hard gatekeeper.
+
+```markdown
+# E.D.E.N. PROTOCOL: AGENT OPERATING SYSTEM
+
+You are operating inside an E.D.E.N. governed repository. You must adhere strictly to the Law of Necessity: local sovereignty, zero bloat, and strict hardware efficiency.
+
+## MANDATORY EXECUTION LOOP
+Do NOT write or modify code until you have completed Phase 1 and Phase 2.
+
+### Phase 1: E — Evaluate (Pre-Flight Check)
+1. Read `.eden/ARCHITECTURE.md` to understand hardware/memory constraints.
+2. Read `.eden/REGISTRY.md` to see ALL existing utilities, models, and modules.
+3. Read `.eden/LEARNINGS.md` to avoid repeating past architectural mistakes.
+
+### Phase 2: D — Define (Anti-Duplication Gate)
+1. Check `.eden/PLAN.md` for the current active task.
+2. **ANTI-DUPLICATION LAW:** Before creating any new function, class, helper, or installing a package, search `.eden/REGISTRY.md`. If a similar component exists, you MUST import or extend it. Never build parallel implementations.
+3. State your proposed file changes and which existing registry modules you will reuse before writing code.
+
+### Phase 3: E — Execute (Lean Implementation)
+1. Write modular, single-responsibility code with minimal external dependencies.
+2. Respect the target hardware ceiling (e.g., 4GB RAM limit, edge execution). Avoid heavy abstractions when standard library primitives suffice.
+
+### Phase 4: N — Normalize (Mandatory Post-Flight State Update)
+Your task is **INCOMPLETE** until you update the repository state:
+1. **Update `.eden/REGISTRY.md`:** If you created a new file, class, or shared function, register its path, purpose, and signature.
+2. **Append to `.eden/CHANGELOG_AGENT.jsonl`:** Log a single-line JSON entry of what changed and why.
+3. **Update `.eden/LEARNINGS.md`:** If you hit an environment quirk, port conflict, or tricky bug, document the root cause and fix.
+
+```
+
+---
+
+### `.eden/REGISTRY.md` (The Anti-Duplication Shield)
+
+This is the most critical piece for stopping agents from inventing three different HTTP clients or four separate logger scripts. It gives the agent an instant, low-token index of the entire codebase so it doesn't have to grep blindly.
+
+```markdown
+# COMPONENT & DEPENDENCY REGISTRY
+> **AGENT INSTRUCTION:** Search this file BEFORE writing new helpers, utilities, or installing packages. If it exists here, import it. When you create a new shared module, add it here immediately during the Normalize phase.
+
+## 1. Approved External Dependencies
+| Package / Library | Purpose | Version / Constraint |
+| :--- | :--- | :--- |
+| *Example: `requests`* | *Synchronous HTTP client* | *Standard — Do NOT install `httpx` or `urllib3` directly* |
+
+## 2. Internal Shared Modules (Reuse Mandatory)
+| Module Path | Exported Symbols / Classes | Responsibility | Used By |
+| :--- | :--- | :--- | :--- |
+| `src/core/config.py` | `load_env()`, `AppConfig` | Central environment & port configuration | All services |
+| `src/utils/logger.py` | `get_logger(name)` | Standardized JSON/console logging | Orchestrator, API |
+
+## 3. Data Schemas & State Files
+| Path | Format | Description |
+| :--- | :--- | :--- |
+| `.eden/CHANGELOG_AGENT.jsonl` | JSONL | Append-only agent mutation history |
+
+```
+
+---
+
+### `.eden/CHANGELOG_AGENT.jsonl` (Cross-Referenced Mutation Log)
+
+Why `.jsonl` instead of Markdown for the changelog? Because when a project grows, Markdown changelogs eat up context windows. With JSONL, an agent (or a quick script you run) can run `tail -n 15 .eden/CHANGELOG_AGENT.jsonl` or `grep "src/auth" .eden/CHANGELOG_AGENT.jsonl` to get surgical context on what changed, when, and which modules it cross-references.
+
+**Template Instruction (placed at the top of `.eden/LEARNINGS.md` or `AGENTS.md`):**
+
+```json
+{"timestamp": "2026-10-23T23:15:00Z", "phase": "Normalize", "task_id": "TASK-01", "action": "MODIFIED", "files": ["src/server.py"], "reused_modules": ["src/core/config.py"], "summary": "Bound server to port 8080 using central AppConfig instead of hardcoded string."}
+
+```
+
+---
+
+### `.eden/LEARNINGS.md` (Episodic & Architectural Memory)
+
+This prevents different models or new chat sessions from falling into the same traps (like `externally-managed-environment` pip errors or Android low-RAM OOM crashes).
+
+```markdown
+# AGENT LEARNINGS & ENVIRONMENT QUIRKS
+> **AGENT INSTRUCTION:** Read before executing. Append new entries when you resolve a non-obvious bug or environment constraint. Keep entries concise.
+
+## Environment & Tooling Rules
+- **Python Env:** Always use the local `.venv/bin/python` — system pip is externally managed.
+- **Hardware Ceiling:** Target environment is constrained (4GB RAM / Mobile Edge). Avoid loading full datasets into memory; use generators/streams.
+
+## Resolved Pitfalls (Do Not Repeat)
+- **[2026-10-23] Port Binding:** Local orchestrator requires explicit check that port 8080 is listening before firing requests; use `src/utils/net.py:wait_for_port()`.
+
+```
+
+---
+
+## 3. Making It "Smart": The Enforcement Script (`scripts/eden-audit.py`)
+
+Agents are notorious for getting lazy at the end of a prompt and skipping documentation updates. To guarantee adherence without relying on the LLM's willpower, we pair the Markdown files with a lightweight, zero-dependency Python verification script (or Git `pre-commit` hook).
+
+When an agent finishes Phase 3 (Execute), its instructions require it to run `python3 scripts/eden-audit.py`. The script checks:
+
+1. **Unregistered Files:** Did `git status` show a new file in `src/` that isn't mentioned in `.eden/REGISTRY.md`? **Fail.**
+2. **Missing Audit Log:** Was code modified without a new line added to `.eden/CHANGELOG_AGENT.jsonl`? **Fail.**
+3. **Forbidden Imports:** Did the agent import a banned duplicate library? **Fail.**
+
+If the script returns an exit code `1`, the agent sees the exact error message in the terminal and is forced to complete the **Normalize** phase before it can hand control back to you.
+
+---
+
+## 4. Provider-Agnostic Bootstrapping (`init-eden.sh`)
+
+To make this an instant template you can drop into any new or existing repo, a single shell script sets up the directory structure and creates symlinks so every major AI coding tool automatically ingests `AGENTS.md` without you ever maintaining duplicate instruction files:
+
+```bash
+#!/usr/bin/env bash
+# Creates symlinks so all AI coding clients read from AGENTS.md
+ln -sf AGENTS.md CLAUDE.md
+ln -sf AGENTS.md .cursorrules
+ln -sf AGENTS.md .windsurfrules
+mkdir -p .github && ln -sf ../AGENTS.md .github/copilot-instructions.md
+
+```
+
+Both scripts are designed with zero external dependencies—relying purely on standard Bash and Python 3's standard library—so they will run out-of-the-box on Debian, WSL, Termux, or any minimal container environment.
+
+The `init-eden.sh` script actually bundles `scripts/eden-audit.py` inside itself and sets up a Git `pre-commit` hook automatically, but I have also broken out `eden-audit.py` standalone first so you can inspect or tweak its enforcement logic directly.
+
+## 1. The Standalone Audit Script (`scripts/eden-audit.py`)
+
+This script inspects the live Git working tree (`git status --porcelain`) and cross-references modified/untracked source files against `.eden/REGISTRY.md` and `.eden/CHANGELOG_AGENT.jsonl`. If an agent creates a new module without registering it, or alters code without logging the mutation, it throws a descriptive error and exits with code `1`.
+
+```python
+#!/usr/bin/env python3
+"""
+E.D.E.N. Protocol Compliance Auditor (Zero-Dependency)
+Enforces the 'Normalize' phase by cross-referencing git status against:
+1. .eden/REGISTRY.md (All source files must be indexed to prevent duplication)
+2. .eden/CHANGELOG_AGENT.jsonl (Code mutations require an updated audit log)
+3. Banned duplicate imports/patterns (Defined in .eden/REGISTRY.md)
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+# Configuration: Adjust tracked extensions for Python, Kotlin, JS/TS, Rust, C/C++, etc.
+CODE_EXTENSIONS = {".py", ".kt", ".kts", ".js", ".ts", ".tsx", ".sh", ".rs", ".c", ".cpp", ".go"}
+IGNORED_DIRS = {".git", ".eden", ".venv", "venv", "node_modules", "build", "dist", "__pycache__", ".gradle", ".idea"}
+EXEMPT_FILES = {"scripts/eden-audit.py", "init-eden.sh"}
+
+REGISTRY_PATH = Path(".eden/REGISTRY.md")
+CHANGELOG_PATH = Path(".eden/CHANGELOG_AGENT.jsonl")
+
+
+def get_git_changes():
+    """Returns a dict of modified/added/untracked file paths -> git status code."""
+    try:
+        res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("[EDEN-AUDIT] WARNING: Not a git repository or git not installed. Skipping git-diff checks.")
+        return {}
+
+    changes = {}
+    for line in res.stdout.splitlines():
+        if not line.strip():
+            continue
+        status = line[:2].strip()
+        raw_path = line[3:].strip()
+        # Handle git rename syntax: "old_path -> new_path"
+        if " -> " in raw_path:
+            raw_path = raw_path.split(" -> ", 1)[1]
+        changes[raw_path.strip('"')] = status
+    return changes
+
+
+def is_tracked_code_file(filepath_str: str) -> bool:
+    if filepath_str in EXEMPT_FILES:
+        return False
+    path = Path(filepath_str)
+    if any(part in IGNORED_DIRS for part in path.parts):
+        return False
+    return path.suffix in CODE_EXTENSIONS
+
+
+def parse_banned_imports(registry_text: str) -> list[str]:
+    """Extracts banned packages wrapped in `BANNED: <pkg>` from REGISTRY.md."""
+    return re.findall(r"BANNED:\s*`?([a-zA-Z0-9_\-\.]+)`?", registry_text)
+
+
+def validate_changelog_tail() -> tuple[bool, str]:
+    """Verifies the last line of CHANGELOG_AGENT.jsonl is valid JSON with required keys."""
+    if not CHANGELOG_PATH.exists():
+        return False, "Missing .eden/CHANGELOG_AGENT.jsonl file."
+    lines = [line.strip() for line in CHANGELOG_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if not lines:
+        return False, ".eden/CHANGELOG_AGENT.jsonl is completely empty."
+    try:
+        last_entry = json.loads(lines[-1])
+        required = {"timestamp", "phase", "action", "files", "summary"}
+        missing = required - set(last_entry.keys())
+        if missing:
+            return False, f"Last JSONL entry is missing required keys: {', '.join(sorted(missing))}"
+        return True, "Valid"
+    except json.JSONDecodeError as e:
+        return False, f"Last line of .eden/CHANGELOG_AGENT.jsonl is invalid JSON: {e}"
+
+
+def main() -> int:
+    errors = []
+
+    # 1. Verify .eden control plane exists
+    if not REGISTRY_PATH.exists() or not CHANGELOG_PATH.exists():
+        print("[EDEN-AUDIT] FATAL: .eden/ control plane missing. Run ./init-eden.sh first.")
+        return 1
+
+    registry_text = REGISTRY_PATH.read_text(encoding="utf-8")
+    banned_packages = parse_banned_imports(registry_text)
+
+    changes = get_git_changes()
+    code_changes = [f for f, status in changes.items() if status != "D" and is_tracked_code_file(f)]
+
+    # 2. Check every modified/new code file against REGISTRY.md and Banned Imports
+    for code_file in code_changes:
+        normalized_path = code_file.replace("\\", "/")
+        if normalized_path not in registry_text:
+            errors.append(
+                f"UNREGISTERED FILE: `{normalized_path}` was created or modified, "
+                f"but is not documented in `.eden/REGISTRY.md`."
+            )
+
+        # Scan file content for banned duplicate packages
+        file_path = Path(code_file)
+        if file_path.exists() and banned_packages:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+            for pkg in banned_packages:
+                pattern = rf"\b(import\s+{re.escape(pkg)}|from\s+{re.escape(pkg)}\s+import|require\(['\"]{re.escape(pkg)}['\"]\))"
+                if re.search(pattern, content):
+                    errors.append(
+                        f"BANNED DEPENDENCY: `{normalized_path}` imports `{pkg}`, "
+                        f"which is marked as BANNED in `.eden/REGISTRY.md`."
+                    )
+
+    # 3. Require CHANGELOG_AGENT.jsonl update whenever code files are mutated
+    if code_changes:
+        if ".eden/CHANGELOG_AGENT.jsonl" not in changes:
+            errors.append(
+                "MISSING AUDIT LOG: Code files were modified, but `.eden/CHANGELOG_AGENT.jsonl` "
+                "was not updated. Append a single-line JSON summary of your changes."
+            )
+        else:
+            valid_json, msg = validate_changelog_tail()
+            if not valid_json:
+                errors.append(f"MALFORMED AUDIT LOG: {msg}")
+
+    # 4. Report Verdict
+    if errors:
+        print("=" * 72)
+        print("❌ E.D.E.N. PROTOCOL AUDIT FAILED — NORMALIZE PHASE INCOMPLETE")
+        print("=" * 72)
+        for i, err in enumerate(errors, 1):
+            print(f"  {i}. {err}")
+        print("-" * 72)
+        print("AGENT REMEDIATION REQUIRED:")
+        print("  -> Register any new/modified modules in `.eden/REGISTRY.md`")
+        print("  -> Append a valid JSON entry to `.eden/CHANGELOG_AGENT.jsonl`")
+        print("  -> Record any non-obvious bugs/fixes in `.eden/LEARNINGS.md`")
+        print("  -> Re-run: `python3 scripts/eden-audit.py`")
+        print("=" * 72)
+        return 1
+
+    print("✅ [EDEN-AUDIT] PASSED: Repository state and registry are synchronized.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+```
+
+---
+
+## 2. The Complete Bootstrapper (`init-eden.sh`)
+
+Save this script anywhere (like `~/bin/init-eden.sh` or in the root of a project) and run `chmod +x init-eden.sh && ./init-eden.sh`.
+
+It is **idempotent**—if you run it inside an existing repo (like `Agora` or `Nexus-LLM`), it won't overwrite your existing `.eden/` logs if they already exist, and it automatically installs the Git `pre-commit` hook so neither you nor an AI agent can commit unindexed code.
+
+```bash
+#!/usr/bin/env bash
+# ==============================================================================
+# E.D.E.N. Protocol Repository Scaffolder (init-eden.sh)
+# Necessity Labs — Model-Agnostic Coding Agent Control Plane
+# ==============================================================================
+set -euo pipefail
+
+PROJECT_NAME="${1:-$(basename "$PWD")}"
+TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+echo "⚡ Initializing E.D.E.N. Protocol Scaffold for: ${PROJECT_NAME}"
+
+mkdir -p .eden scripts
+
+# ------------------------------------------------------------------------------
+# 1. Generate AGENTS.md (Master Router & Operating System)
+# ------------------------------------------------------------------------------
+if [ ! -f AGENTS.md ]; then
+cat << 'EOF' > AGENTS.md
+# E.D.E.N. PROTOCOL: AGENT OPERATING SYSTEM
+
+You are operating inside an **E.D.E.N.** governed repository (**Necessity Labs**).
+Adhere strictly to the **Law of Necessity**:
+- **E — Everything is broken:** Assume zero-trust defaults. Do not rely on fragile cloud dependencies or bloated abstractions.
+- **D — Define the mechanics:** Understand raw memory, I/O,ports, and execution constraints before touching code.
+- **E — Engineer the architecture:** Build modular, sovereign, local-first systems.
+- **N — Necessity dictates the output:** Zero dead code, zero duplicate utilities, zero unapproved packages.
+
+---
+
+## MANDATORY 4-PHASE EXECUTION LOOP
+
+You MUST follow these phases sequentially for every task. Do NOT skip Phase 1, 2, or 4.
+
+### Phase 1: E — Evaluate (Context & Constraint Ingestion)
+Before proposing or writing any code, read:
+1. `.eden/ARCHITECTURE.md` — System boundaries, target hardware ceiling, and ports/data flow.
+2. `.eden/REGISTRY.md` — Complete index of existing internal modules and approved dependencies.
+3. `.eden/LEARNINGS.md` — Known environment quirks and resolved pitfalls.
+4. `tail -n 10 .eden/CHANGELOG_AGENT.jsonl` — Recent mutations for immediate context.
+
+### Phase 2: D — Define (The Anti-Duplication Gate)
+1. Check `.eden/PLAN.md` for the active task scope.
+2. **STRICT ANTI-DUPLICATION RULE:** Search `.eden/REGISTRY.md` before creating any helper, utility, config loader, HTTP client, or logger. If a module with overlapping responsibility exists, you MUST import or extend it.
+3. State your execution plan briefly: list the exact files you will touch and which existing `REGISTRY.md` components you are reusing.
+
+### Phase 3: E — Execute (Lean Implementation)
+1. Implement the solution within the hardware and dependency constraints defined in `.eden/ARCHITECTURE.md`.
+2. Favor standard library primitives over third-party dependencies.
+3. Strip dead code and unused imports immediately.
+
+### Phase 4: N — Normalize (State Synchronization & Audit Gate)
+**Your task is NOT complete until all four steps below are finished:**
+1. **Update `.eden/REGISTRY.md`:** Add or update the row for every new/modified source file, exported class/function, or approved dependency.
+2. **Append to `.eden/CHANGELOG_AGENT.jsonl`:** Append a single-line valid JSON record at the bottom of the file using this exact schema:
+   `{"timestamp": "YYYY-MM-DDTHH:MM:SSZ", "phase": "Normalize", "task_id": "TASK-ID", "action": "CREATED|MODIFIED|REFACTORED", "files": ["path/to/file"], "reused_modules": ["path/to/reused"], "summary": "Concise technical summary"}`
+3. **Update `.eden/LEARNINGS.md`:** If you resolved an environment bug, build failure, or hardware quirk, document the root cause and fix.
+4. **Run the Compliance Audit:** Execute `python3 scripts/eden-audit.py` and resolve any reported errors before returning your final response.
+EOF
+  echo "  [+] Created AGENTS.md"
+else
+  echo "  [~] AGENTS.md already exists (skipped)"
+fi
+
+# ------------------------------------------------------------------------------
+# 2. Generate .eden/ARCHITECTURE.md
+# ------------------------------------------------------------------------------
+if [ ! -f .eden/ARCHITECTURE.md ]; then
+cat << EOF > .eden/ARCHITECTURE.md
+# SYSTEM ARCHITECTURE & CONSTRAINTS (${PROJECT_NAME})
+
+## 1. Hardware & Runtime Ceiling
+- **Target Hardware:** Constrained Edge / Local Execution (e.g., 4GB RAM Linux/WSL node, 12GB-16GB Android Mobile Edge).
+- **Memory Discipline:** Avoid loading unbounded datasets into memory; prefer streaming, generators, and bounded buffers.
+- **Sovereignty Requirement:** Must operate offline or over local LAN without mandatory third-party cloud telemetry.
+
+## 2. Environment & Runtime Specs
+- **Primary Languages:** [Specify e.g., Python 3.11+ / Kotlin / Bash]
+- **Virtual Environment:** Always use local \`.venv/bin/python\` (system pip is externally managed).
+- **Network / Ports:** Document all bound local ports here to prevent collisions.
+
+## 3. Core Data Flow
+\`\`\`text
+[Input / Sensor / CLI] ---> [Core Orchestrator] ---> [Local Model / Storage]
+\`\`\`
+EOF
+  echo "  [+] Created .eden/ARCHITECTURE.md"
+fi
+
+# ------------------------------------------------------------------------------
+# 3. Generate .eden/REGISTRY.md (Anti-Duplication Index)
+# ------------------------------------------------------------------------------
+if [ ! -f .eden/REGISTRY.md ]; then
+cat << 'EOF' > .eden/REGISTRY.md
+# COMPONENT & DEPENDENCY REGISTRY
+> **AGENT RULE:** Check this registry BEFORE writing any new helper or installing any package.
+> To ban a duplicate library, list `BANNED: package_name` in the Notes column (enforced by `eden-audit.py`).
+
+## 1. External Dependencies
+| Package | Purpose | Constraint / Notes |
+| :--- | :--- | :--- |
+| `standard-library` | Default runtime primitives | Always prefer stdlib first |
+
+## 2. Internal Modules & Source Files (Reuse Mandatory)
+| File Path | Exported Symbols / Key API | Responsibility | Consumers |
+| :--- | :--- | :--- | :--- |
+| `scripts/eden-audit.py` | `main()` | Verifies registry & changelog compliance | CLI / Git Hook |
+
+## 3. Configuration & State Schemas
+| Path | Type | Description |
+| :--- | :--- | :--- |
+| `.eden/CHANGELOG_AGENT.jsonl` | JSONL | Append-only agent mutation history |
+| `.eden/LEARNINGS.md` | Markdown | Persistent environment & debugging memory |
+EOF
+  echo "  [+] Created .eden/REGISTRY.md"
+fi
+
+# ------------------------------------------------------------------------------
+# 4. Generate .eden/PLAN.md
+# ------------------------------------------------------------------------------
+if [ ! -f .eden/PLAN.md ]; then
+cat << 'EOF' > .eden/PLAN.md
+# ACTIVE EXECUTION PLAN
+
+## Current Objective
+- [ ] **TASK-01:** Define initial system architecture in `.eden/ARCHITECTURE.md` and register existing source files in `.eden/REGISTRY.md`.
+
+## Backlog
+- [ ] **TASK-02:** [Add next milestone]
+
+## Completed
+- [x] **TASK-00:** Initialized E.D.E.N. Protocol repository control plane.
+EOF
+  echo "  [+] Created .eden/PLAN.md"
+fi
+
+# ------------------------------------------------------------------------------
+# 5. Generate .eden/LEARNINGS.md
+# ------------------------------------------------------------------------------
+if [ ! -f .eden/LEARNINGS.md ]; then
+cat << 'EOF' > .eden/LEARNINGS.md
+# AGENT LEARNINGS & ENVIRONMENT QUIRKS
+> **AGENT RULE:** Read before executing. Append concise root-cause notes whenever you solve a non-obvious environment, dependency, or hardware issue.
+
+## Environment Rules
+- **PEP 668 / pip:** Never run bare `pip install` against system Python on Debian/Ubuntu/WSL; always invoke `.venv/bin/pip` or `python3 -m venv .venv`.
+- **File Auditing:** Every new code file must appear in `.eden/REGISTRY.md` or `scripts/eden-audit.py` will fail the build.
+
+## Resolved Pitfalls (Chronological)
+- *[Add entries as `[YYYY-MM-DD] Component: Issue -> Fix`]*
+EOF
+  echo "  [+] Created .eden/LEARNINGS.md"
+fi
+
+# ------------------------------------------------------------------------------
+# 6. Generate .eden/CHANGELOG_AGENT.jsonl
+# ------------------------------------------------------------------------------
+if [ ! -f .eden/CHANGELOG_AGENT.jsonl ]; then
+cat << EOF > .eden/CHANGELOG_AGENT.jsonl
+{"timestamp": "${TIMESTAMP}", "phase": "Normalize", "task_id": "TASK-00", "action": "CREATED", "files": ["AGENTS.md", ".eden/REGISTRY.md", "scripts/eden-audit.py"], "reused_modules": [], "summary": "Initialized E.D.E.N. Protocol repository control plane and audit script."}
+EOF
+  echo "  [+] Created .eden/CHANGELOG_AGENT.jsonl"
+fi
+
+# ------------------------------------------------------------------------------
+# 7. Write scripts/eden-audit.py
+# ------------------------------------------------------------------------------
+cat << 'EOF' > scripts/eden-audit.py
+#!/usr/bin/env python3
+"""
+E.D.E.N. Protocol Compliance Auditor (Zero-Dependency)
+"""
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+CODE_EXTENSIONS = {".py", ".kt", ".kts", ".js", ".ts", ".tsx", ".sh", ".rs", ".c", ".cpp", ".go"}
+IGNORED_DIRS = {".git", ".eden", ".venv", "venv", "node_modules", "build", "dist", "__pycache__", ".gradle", ".idea"}
+EXEMPT_FILES = {"scripts/eden-audit.py", "init-eden.sh"}
+
+REGISTRY_PATH = Path(".eden/REGISTRY.md")
+CHANGELOG_PATH = Path(".eden/CHANGELOG_AGENT.jsonl")
+
+
+def get_git_changes():
+    try:
+        res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("[EDEN-AUDIT] WARNING: Not a git repository or git not installed. Skipping git-diff checks.")
+        return {}
+
+    changes = {}
+    for line in res.stdout.splitlines():
+        if not line.strip():
+            continue
+        status = line[:2].strip()
+        raw_path = line[3:].strip()
+        if " -> " in raw_path:
+            raw_path = raw_path.split(" -> ", 1)[1]
+        changes[raw_path.strip('"')] = status
+    return changes
+
+
+def is_tracked_code_file(filepath_str: str) -> bool:
+    if filepath_str in EXEMPT_FILES:
+        return False
+    path = Path(filepath_str)
+    if any(part in IGNORED_DIRS for part in path.parts):
+        return False
+    return path.suffix in CODE_EXTENSIONS
+
+
+def parse_banned_imports(registry_text: str) -> list[str]:
+    return re.findall(r"BANNED:\s*`?([a-zA-Z0-9_\-\.]+)`?", registry_text)
+
+
+def validate_changelog_tail() -> tuple[bool, str]:
+    if not CHANGELOG_PATH.exists():
+        return False, "Missing .eden/CHANGELOG_AGENT.jsonl file."
+    lines = [line.strip() for line in CHANGELOG_PATH.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if not lines:
+        return False, ".eden/CHANGELOG_AGENT.jsonl is completely empty."
+    try:
+        last_entry = json.loads(lines[-1])
+        required = {"timestamp", "phase", "action", "files", "summary"}
+        missing = required - set(last_entry.keys())
+        if missing:
+            return False, f"Last JSONL entry is missing required keys: {', '.join(sorted(missing))}"
+        return True, "Valid"
+    except json.JSONDecodeError as e:
+        return False, f"Last line of .eden/CHANGELOG_AGENT.jsonl is invalid JSON: {e}"
+
+
+def main() -> int:
+    errors = []
+
+    if not REGISTRY_PATH.exists() or not CHANGELOG_PATH.exists():
+        print("[EDEN-AUDIT] FATAL: .eden/ control plane missing. Run ./init-eden.sh first.")
+        return 1
+
+    registry_text = REGISTRY_PATH.read_text(encoding="utf-8")
+    banned_packages = parse_banned_imports(registry_text)
+
+    changes = get_git_changes()
+    code_changes = [f for f, status in changes.items() if status != "D" and is_tracked_code_file(f)]
+
+    for code_file in code_changes:
+        normalized_path = code_file.replace("\\", "/")
+        if normalized_path not in registry_text:
+            errors.append(
+                f"UNREGISTERED FILE: `{normalized_path}` was created or modified, "
+                f"but is not documented in `.eden/REGISTRY.md`."
+            )
+
+        file_path = Path(code_file)
+        if file_path.exists() and banned_packages:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+            for pkg in banned_packages:
+                pattern = rf"\b(import\s+{re.escape(pkg)}|from\s+{re.escape(pkg)}\s+import|require\(['\"]{re.escape(pkg)}['\"]\))"
+                if re.search(pattern, content):
+                    errors.append(
+                        f"BANNED DEPENDENCY: `{normalized_path}` imports `{pkg}`, "
+                        f"which is marked as BANNED in `.eden/REGISTRY.md`."
+                    )
+
+    if code_changes:
+        if ".eden/CHANGELOG_AGENT.jsonl" not in changes:
+            errors.append(
+                "MISSING AUDIT LOG: Code files were modified, but `.eden/CHANGELOG_AGENT.jsonl` "
+                "was not updated. Append a single-line JSON summary of your changes."
+            )
+        else:
+            valid_json, msg = validate_changelog_tail()
+            if not valid_json:
+                errors.append(f"MALFORMED AUDIT LOG: {msg}")
+
+    if errors:
+        print("=" * 72)
+        print("❌ E.D.E.N. PROTOCOL AUDIT FAILED — NORMALIZE PHASE INCOMPLETE")
+        print("=" * 72)
+        for i, err in enumerate(errors, 1):
+            print(f"  {i}. {err}")
+        print("-" * 72)
+        print("AGENT REMEDIATION REQUIRED:")
+        print("  -> Register any new/modified modules in `.eden/REGISTRY.md`")
+        print("  -> Append a valid JSON entry to `.eden/CHANGELOG_AGENT.jsonl`")
+        print("  -> Record any non-obvious bugs/fixes in `.eden/LEARNINGS.md`")
+        print("  -> Re-run: `python3 scripts/eden-audit.py`")
+        print("=" * 72)
+        return 1
+
+    print("✅ [EDEN-AUDIT] PASSED: Repository state and registry are synchronized.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+EOF
+chmod +x scripts/eden-audit.py
+echo "  [+] Created scripts/eden-audit.py"
+
+# ------------------------------------------------------------------------------
+# 8. Create Provider-Agnostic Symlinks & Git Pre-Commit Hook
+# ------------------------------------------------------------------------------
+ln -sf AGENTS.md CLAUDE.md
+ln -sf AGENTS.md .cursorrules
+ln -sf AGENTS.md .windsurfrules
+mkdir -p .github
+ln -sf ../AGENTS.md .github/copilot-instructions.md
+echo "  [+] Linked CLAUDE.md, .cursorrules, .windsurfrules, and .github/copilot-instructions.md -> AGENTS.md"
+
+if [ -d .git ]; then
+  mkdir -p .git/hooks
+  cat << 'EOF' > .git/hooks/pre-commit
+#!/usr/bin/env bash
+python3 scripts/eden-audit.py
+EOF
+  chmod +x .git/hooks/pre-commit
+  echo "  [+] Installed .git/hooks/pre-commit enforcement hook"
+else
+  echo "  [i] Tip: Run 'git init' and re-run ./init-eden.sh to install the pre-commit hook."
+fi
+
+echo "✅ E.D.E.N. Scaffold Ready. Test with: python3 scripts/eden-audit.py"
+
+```
+
+---
+
+## How the Enforcement Loop Works in Practice
+
+1. **Banning Duplicate Libraries:** In `.eden/REGISTRY.md`, if you decide `requests` is your standard HTTP client, you put `BANNED: httpx` and `BANNED: urllib3` in the Notes column. If an agent writes `import httpx` in any file, `eden-audit.py` catches it via regex and blocks the completion.
+2. **Automatic Back-Pressure:** Because `.git/hooks/pre-commit` executes `scripts/eden-audit.py`, even if an autonomous CLI agent tries to run `git commit -m "feat: add parser"` without updating `.eden/REGISTRY.md` and `.eden/CHANGELOG_AGENT.jsonl`, Git will reject the commit and print the exact remediation checklist straight into the agent's stdout.
+
+This zero-dependency indexer script (`scripts/eden-index.py`) is built to run quickly on constrained hardware without eating up RAM. It reads files sequentially and uses Python’s built-in `ast` module for exact Python parsing alongside lightweight regex extractors for Kotlin (including `@Composable` functions, `object` singletons, and `data class` definitions), TypeScript/JavaScript, and Shell scripts.
+
+Crucially, it is **non-destructive**: if you already have manually curated notes in the **External Dependencies** or **Configuration & State Schemas** sections of `.eden/REGISTRY.md` (such as `BANNED:` rules), running `eden-index.py` will only regenerate Section 2 (**Internal Modules & Source Files**) while preserving the rest of your file.
+
+## `scripts/eden-index.py`
+
+Save this to `scripts/eden-index.py` and make it executable (`chmod +x scripts/eden-index.py`).
+
+```python
+#!/usr/bin/env python3
+"""
+E.D.E.N. Protocol Auto-Indexer (Zero-Dependency)
+Scans an existing repository (Python, Kotlin, TS/JS, Rust, Go, C/C++, Bash)
+and populates Section 2 of .eden/REGISTRY.md with exported classes, functions,
+and inferred consumers so coding agents never duplicate existing components.
+"""
+
+import ast
+import os
+import re
+import sys
+from pathlib import Path
+
+# ------------------------------------------------------------------------------
+# Configuration & Filtering
+# ------------------------------------------------------------------------------
+CODE_EXTENSIONS = {".py", ".kt", ".kts", ".js", ".ts", ".tsx", ".sh", ".rs", ".go", ".c", ".cpp"}
+DEPENDENCY_FILES = {
+    "requirements.txt", "pyproject.toml", "package.json",
+    "build.gradle", "build.gradle.kts", "libs.versions.toml", "Cargo.toml"
+}
+IGNORED_DIRS = {
+    ".git", ".eden", ".venv", "venv", "env", "node_modules",
+    "build", "dist", "target", "out", "__pycache__", ".gradle", ".idea", ".vscode"
+}
+
+REGISTRY_PATH = Path(".eden/REGISTRY.md")
+MAX_SYMBOLS_PER_FILE = 8  # Caps table width so REGISTRY.md stays token-efficient
+
+
+# ------------------------------------------------------------------------------
+# Language-Specific Symbol & Doc Extractors
+# ------------------------------------------------------------------------------
+def clean_table_cell(text: str) -> str:
+    """Sanitizes strings for safe Markdown table rendering."""
+    if not text:
+        return "—"
+    cleaned = " ".join(text.strip().splitlines())
+    cleaned = cleaned.replace("|", "\\|")
+    return (cleaned[:85] + "...") if len(cleaned) > 88 else cleaned
+
+
+def extract_python(content: str) -> tuple[list[str], str]:
+    """Uses Python AST to extract top-level classes, functions, methods, and docstrings."""
+    symbols = []
+    doc_summary = ""
+    try:
+        tree = ast.parse(content)
+        raw_doc = ast.get_docstring(tree)
+        if raw_doc:
+            doc_summary = raw_doc.strip().splitlines()[0]
+
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
+                methods = [
+                    n.name for n in node.body
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and not n.name.startswith("_")
+                ]
+                if methods:
+                    preview = ", ".join(methods[:3])
+                    suffix = ", ..." if len(methods) > 3 else ""
+                    symbols.append(f"`{node.name}` ({preview}{suffix})")
+                else:
+                    symbols.append(f"`{node.name}`")
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if not node.name.startswith("_") or node.name == "main":
+                    symbols.append(f"`{node.name}()`")
+    except SyntaxError:
+        return extract_generic_regex(content, ".py")
+
+    return symbols, doc_summary
+
+
+def extract_kotlin(content: str) -> tuple[list[str], str]:
+    """Extracts Kotlin classes, objects, interfaces, and functions (including @Composable)."""
+    symbols = []
+    doc_summary = ""
+
+    # Match top-level KDoc or header comment
+    doc_match = re.search(r"/\*\*\s*(.*?)\s*\*/", content, re.DOTALL)
+    if doc_match:
+        lines = [line.lstrip(" *").strip() for line in doc_match.group(1).splitlines() if line.lstrip(" *").strip()]
+        if lines:
+            doc_summary = lines[0]
+
+    # Classes, Objects, Interfaces, Enums
+    type_pattern = re.compile(
+        r"^\s*(?:(?:public|internal|open|abstract|sealed|data|value|enum|annotation)\s+)*"
+        r"(class|interface|object)\s+([A-Za-z0-9_]+)",
+        re.MULTILINE
+    )
+    for kind, name in type_pattern.findall(content):
+        prefix = "obj " if kind == "object" else ""
+        symbols.append(f"`{prefix}{name}`")
+
+    # Top-level or key functions (including @Composable)
+    fun_pattern = re.compile(
+        r"(?:(@Composable)\s+)?^\s*(?:(?:public|internal|override|suspend|inline)\s+)*"
+        r"fun\s+(?:<[^>]+>\s+)?(?:[A-Za-z0-9_<>?]+\.)?([A-Za-z0-9_]+)\s*\(",
+        re.MULTILINE
+    )
+    for is_composable, name in fun_pattern.findall(content):
+        tag = f"`@{name}()`" if is_composable else f"`{name}()`"
+        if tag not in symbols:
+            symbols.append(tag)
+
+    return symbols, doc_summary
+
+
+def extract_ts_js(content: str) -> tuple[list[str], str]:
+    """Extracts exported classes, functions, types, and components from JS/TS/TSX."""
+    symbols = []
+    doc_summary = ""
+
+    for match in re.finditer(
+        r"export\s+(?:default\s+)?(?:async\s+)?(class|function|const|let|interface|type)\s+([A-Za-z0-9_]+)",
+        content
+    ):
+        kind, name = match.groups()
+        suffix = "()" if kind == "function" else ""
+        symbols.append(f"`{name}{suffix}`")
+
+    return symbols, doc_summary
+
+
+def extract_generic_regex(content: str, suffix: str) -> tuple[list[str], str]:
+    """Fallback extractor for Bash, Rust, Go, and C/C++."""
+    symbols = []
+    doc_summary = ""
+
+    # Grab first meaningful top comment line
+    for line in content.splitlines()[:10]:
+        stripped = line.strip()
+        if stripped.startswith(("#", "//")) and not stripped.startswith("#!"):
+            cleaned = stripped.lstrip("#/ ").strip()
+            if len(cleaned) > 5 and not set(cleaned) <= {"=", "-", "*"}:
+                doc_summary = cleaned
+                break
+
+    if suffix == ".sh":
+        for m in re.finditer(r"^\s*(?:function\s+)?([a-zA-Z0-9_\-]+)\s*\(\)\s*\{", content, re.MULTILINE):
+            symbols.append(f"`{m.group(1)}()`")
+    elif suffix == ".rs":
+        for m in re.finditer(r"^\s*pub\s+(?:async\s+)?(fn|struct|enum|trait)\s+([A-Za-z0-9_]+)", content, re.MULTILINE):
+            suffix_str = "()" if m.group(1) == "fn" else ""
+            symbols.append(f"`{m.group(2)}{suffix_str}`")
+    elif suffix == ".go":
+        for m in re.finditer(r"^\s*(?:func|type)\s+(?:\([^)]+\)\s+)?([A-Z][A-Za-z0-9_]*)", content, re.MULTILINE):
+            symbols.append(f"`{m.group(1)}`")
+
+    return symbols, doc_summary
+
+
+def infer_responsibility(rel_path: str, doc_summary: str) -> str:
+    """Falls back to heuristic naming if a file lacks a module docstring."""
+    if doc_summary:
+        return doc_summary
+    stem = Path(rel_path).stem.lower()
+    heuristics = {
+        "main": "Application entrypoint",
+        "cli": "CLI command router and argument parser",
+        "config": "Configuration & environment management",
+        "orchestrator": "Core execution & agent orchestration loop",
+        "server": "Local server & request handler",
+        "client": "API / network client wrapper",
+        "db": "Local database & persistence layer",
+        "models": "Data structures and domain models",
+        "utils": "Shared helper utilities",
+        "viewmodel": "UI state holder and business logic",
+        "repository": "Data source coordination layer",
+    }
+    for key, desc in heuristics.items():
+        if key in stem:
+            return desc
+    return f"Module `{Path(rel_path).name}`"
+
+
+# ------------------------------------------------------------------------------
+# Repository Scanner & Cross-Reference Engine
+# ------------------------------------------------------------------------------
+def scan_codebase(root: Path):
+    code_files = []
+    dep_manifests = []
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Prune ignored directories in-place for low-memory traversal
+        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS and not d.startswith(".Eden")]
+
+        for fname in sorted(filenames):
+            fpath = Path(dirpath) / fname
+            rel_path = fpath.relative_to(root).as_posix()
+
+            if fname in DEPENDENCY_FILES:
+                dep_manifests.append(rel_path)
+
+            if fpath.suffix in CODE_EXTENSIONS:
+                code_files.append((rel_path, fpath))
+
+    return code_files, dep_manifests
+
+
+def build_module_rows(code_files: list[tuple[str, Path]]) -> list[str]:
+    """Parses all files and cross-references stems to infer 'Consumers'."""
+    parsed_records = []
+    file_contents_cache = {}
+
+    for rel_path, fpath in code_files:
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+
+        file_contents_cache[rel_path] = content
+        ext = fpath.suffix
+
+        if ext == ".py":
+            symbols, doc = extract_python(content)
+        elif ext in {".kt", ".kts"}:
+            symbols, doc = extract_kotlin(content)
+        elif ext in {".js", ".ts", ".tsx"}:
+            symbols, doc = extract_ts_js(content)
+        else:
+            symbols, doc = extract_generic_regex(content, ext)
+
+        if len(symbols) > MAX_SYMBOLS_PER_FILE:
+            shown = symbols[:MAX_SYMBOLS_PER_FILE]
+            symbol_str = ", ".join(shown) + f" *(+{len(symbols) - MAX_SYMBOLS_PER_FILE} more)*"
+        elif symbols:
+            symbol_str = ", ".join(symbols)
+        else:
+            symbol_str = "*(script / definitions)*"
+
+        responsibility = infer_responsibility(rel_path, doc)
+        parsed_records.append((rel_path, symbol_str, responsibility))
+
+    # Cross-reference module names across files to populate 'Consumers'
+    rows = []
+    for rel_path, symbol_str, responsibility in parsed_records:
+        stem = Path(rel_path).stem
+        consumers = []
+        if stem not in {"__init__", "index", "main", "MainActivity"} and len(stem) > 3:
+            pattern = re.compile(rf"\b{re.escape(stem)}\b")
+            for other_path, other_content in file_contents_cache.items():
+                if other_path != rel_path and pattern.search(other_content):
+                    consumers.append(f"`{Path(other_path).name}`")
+
+        if consumers:
+            consumer_str = ", ".join(consumers[:3]) + ("..." if len(consumers) > 3 else "")
+        else:
+            consumer_str = "Entrypoint / Unreferenced"
+
+        rows.append(
+            f"| `{rel_path}` | {clean_table_cell(symbol_str)} | "
+            f"{clean_table_cell(responsibility)} | {clean_table_cell(consumer_str)} |"
+        )
+
+    return rows
+
+
+# ------------------------------------------------------------------------------
+# Non-Destructive REGISTRY.md Updater
+# ------------------------------------------------------------------------------
+def update_registry_file(module_rows: list[str], dep_manifests: list[str]):
+    REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    section_2_header = "## 2. Internal Modules & Source Files (Reuse Mandatory)"
+    table_header = (
+        "| File Path | Exported Symbols / Key API | Responsibility | Consumers |\n"
+        "| :--- | :--- | :--- | :--- |"
+    )
+    new_section_2_body = f"{section_2_header}\n{table_header}\n" + "\n".join(module_rows) + "\n"
+
+    if not REGISTRY_PATH.exists():
+        # Create fresh REGISTRY.md if none exists
+        manifests_note = ", ".join(f"`{m}`" for m in dep_manifests) if dep_manifests else "None detected"
+        content = f"""# COMPONENT & DEPENDENCY REGISTRY
+> **AGENT RULE:** Check this registry BEFORE writing any new helper or installing any package.
+> To ban a duplicate library, list `BANNED: package_name` in the Notes column (enforced by `eden-audit.py`).
+
+## 1. External Dependencies
+*Detected Manifests: {manifests_note}*
+
+| Package | Purpose | Constraint / Notes |
+| :--- | :--- | :--- |
+| `standard-library` | Default runtime primitives | Always prefer stdlib first |
+
+{new_section_2_body}
+## 3. Configuration & State Schemas
+| Path | Type | Description |
+| :--- | :--- | :--- |
+| `.eden/CHANGELOG_AGENT.jsonl` | JSONL | Append-only agent mutation history |
+| `.eden/LEARNINGS.md` | Markdown | Persistent environment & debugging memory |
+"""
+        REGISTRY_PATH.write_text(content, encoding="utf-8")
+        return
+
+    # If REGISTRY.md exists, surgically replace ONLY Section 2 so manual notes & BANNED rules survive
+    existing = REGISTRY_PATH.read_text(encoding="utf-8")
+    pattern = re.compile(
+        r"(## 2\. Internal Modules & Source Files.*?)(\n## 3\.|\Z)",
+        re.DOTALL
+    )
+    if pattern.search(existing):
+        updated = pattern.sub(lambda m: f"{new_section_2_body.rstrip()}\n{m.group(2)}", existing)
+        REGISTRY_PATH.write_text(updated, encoding="utf-8")
+    else:
+        REGISTRY_PATH.write_text(existing.rstrip() + "\n\n" + new_section_2_body, encoding="utf-8")
+
+
+def main() -> int:
+    root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
+    print(f"🔍 [EDEN-INDEX] Scanning codebase at: {root}")
+
+    code_files, dep_manifests = scan_codebase(root)
+    if not code_files:
+        print("⚠️  [EDEN-INDEX] No matching source files found.")
+        return 0
+
+    rows = build_module_rows(code_files)
+    update_registry_file(rows, dep_manifests)
+
+    print(f"✅ [EDEN-INDEX] Indexed {len(rows)} source files into {REGISTRY_PATH}")
+    if dep_manifests:
+        print(f"📦 [EDEN-INDEX] Detected dependency manifests: {', '.join(dep_manifests)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+```
+
+---
+
+## What It Generates (Example on `Agora` + `Nexus-LLM`)
+
+When you run `python3 scripts/eden-index.py` inside a mixed Kotlin/Python repository, Section 2 of `.eden/REGISTRY.md` automatically populates like this:
+
+| File Path | Exported Symbols / Key API | Responsibility | Consumers |
+| --- | --- | --- | --- |
+| `app/src/main/java/com/agora/ui/ChatScreen.kt` | `@ChatScreen()`, `@MessageBubble()`, `ChatUiState` | Primary Compose UI for mentor sessions | `MainActivity.kt` |
+| `app/src/main/java/com/agora/core/MentorValidator.kt` | `obj MentorValidator`, `validateSchema()` | Hostile-by-default local `.mentor` parser | `ChatViewModel.kt`, `ImportWorker.kt` |
+| `src/core/orchestrator.py` | `NodeOrchestrator` (`dispatch`, `health_check`), `run_loop()` | Core execution & agent orchestration loop | `main.py`, `cli.py` |
+| `scripts/eden-audit.py` | `main()`, `get_git_changes()`, `validate_changelog_tail()` | E.D.E.N. Protocol Compliance Auditor | Entrypoint / Unreferenced |
+
+---
+
+## Hooking It Into `init-eden.sh` and `eden-audit.py`
+
+1. **Exempt it in `scripts/eden-audit.py`:** Add `"scripts/eden-index.py"` to the `EXEMPT_FILES` set at the top of `eden-audit.py` (or simply let `eden-index.py` index itself into `REGISTRY.md`, which it does automatically).
+2. **One-Command Onboarding for Existing Repos:** Whenever you drop the E.D.E.N. scaffold into an existing repo, run:
+```bash
+./init-eden.sh && python3 scripts/eden-index.py
+
+```
+
+
+Every existing file is immediately registered, meaning `python3 scripts/eden-audit.py` will pass cleanly on `git commit` from minute one, and any coding agent reading `.eden/REGISTRY.md` gets a complete map of your architecture before it writes a single line of code.
