@@ -14,20 +14,52 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Configuration: Adjust tracked extensions for Python, Kotlin, JS/TS, Rust, C/C++, etc.
-CODE_EXTENSIONS = {".py", ".kt", ".kts", ".js", ".ts", ".tsx", ".sh", ".ps1", ".rs", ".c", ".cpp", ".go"}
-IGNORED_DIRS = {".git", ".eden", ".venv", "venv", "node_modules", "build", "dist", "__pycache__", ".gradle", ".idea"}
-EXEMPT_FILES = {"scripts/eden-audit.py", "init-eden.sh"}
+# Safe Unicode output for Windows consoles (cp1252/ascii)
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
-REGISTRY_PATH = Path(".eden/REGISTRY.md")
-CHANGELOG_PATH = Path(".eden/CHANGELOG_AGENT.jsonl")
+CODE_EXTENSIONS = {
+    ".py", ".kt", ".kts", ".java", ".js", ".ts", ".tsx",
+    ".sh", ".ps1", ".rs", ".c", ".cpp", ".h", ".go"
+}
+IGNORED_DIRS = {
+    ".git", ".eden", ".venv", "venv", "node_modules",
+    "build", "dist", "__pycache__", ".gradle", ".idea", "docs",
+    "third_party", "test", "androidTest", ".cxx", "schemas"
+}
+EXEMPT_FILES = {
+    "scripts/eden-audit.py",
+    "scripts/eden-index.py",
+    "init-eden.sh",
+    "init-eden.ps1",
+}
 
 
-def get_git_changes():
-    """Returns a dict of modified/added/untracked file paths -> git status code."""
+def find_repo_root() -> Path:
+    """Discovers repository root by inspecting script location hierarchy first, then CWD."""
+    script_root = Path(__file__).resolve().parent.parent
+    if (script_root / ".eden").is_dir():
+        return script_root
+    cwd = Path.cwd()
+    if (cwd / ".eden").is_dir():
+        return cwd
+    return script_root
+
+
+REPO_ROOT = find_repo_root()
+REGISTRY_PATH = REPO_ROOT / ".eden" / "REGISTRY.md"
+CHANGELOG_PATH = REPO_ROOT / ".eden" / "CHANGELOG_AGENT.jsonl"
+
+
+def get_git_changes() -> dict[str, str]:
+    """Returns a dict of normalized modified/added/untracked file paths -> git status code."""
     try:
         res = subprocess.run(
-            ["git", "status", "--porcelain"],
+            ["git", "-C", str(REPO_ROOT), "status", "--porcelain"],
             capture_output=True,
             text=True,
             check=True
@@ -42,10 +74,10 @@ def get_git_changes():
             continue
         status = line[:2].strip()
         raw_path = line[3:].strip()
-        # Handle git rename syntax: "old_path -> new_path"
         if " -> " in raw_path:
             raw_path = raw_path.split(" -> ", 1)[1]
-        changes[raw_path.strip('"')] = status
+        normalized = raw_path.strip('"').replace("\\", "/")
+        changes[normalized] = status
     return changes
 
 
@@ -59,7 +91,7 @@ def is_tracked_code_file(filepath_str: str) -> bool:
 
 
 def parse_banned_imports(registry_text: str) -> list[str]:
-    """Extracts banned packages wrapped in `BANNED: <pkg>` from REGISTRY.md."""
+    """Extracts banned packages wrapped in BANNED: <pkg> from REGISTRY.md."""
     return re.findall(r"BANNED:\s*`?([a-zA-Z0-9_\-\.]+)`?", registry_text)
 
 
@@ -86,7 +118,7 @@ def main() -> int:
 
     # 1. Verify .eden control plane exists
     if not REGISTRY_PATH.exists() or not CHANGELOG_PATH.exists():
-        print("[EDEN-AUDIT] FATAL: .eden/ control plane missing. Run ./init-eden.sh first.")
+        print(f"[EDEN-AUDIT] FATAL: .eden/ control plane missing at {REPO_ROOT}. Run ./init-eden.sh or .\\init-eden.ps1 first.")
         return 1
 
     registry_text = REGISTRY_PATH.read_text(encoding="utf-8")
@@ -105,7 +137,7 @@ def main() -> int:
             )
 
         # Scan file content for banned duplicate packages
-        file_path = Path(code_file)
+        file_path = REPO_ROOT / code_file
         if file_path.exists() and banned_packages:
             content = file_path.read_text(encoding="utf-8", errors="ignore")
             for pkg in banned_packages:
@@ -118,7 +150,11 @@ def main() -> int:
 
     # 3. Require CHANGELOG_AGENT.jsonl update whenever code files are mutated
     if code_changes:
-        if ".eden/CHANGELOG_AGENT.jsonl" not in changes:
+        changelog_modified = any(
+            ".eden/CHANGELOG_AGENT.jsonl" in c or c == ".eden/" or c.startswith(".eden/")
+            for c in changes
+        )
+        if not changelog_modified:
             errors.append(
                 "MISSING AUDIT LOG: Code files were modified, but `.eden/CHANGELOG_AGENT.jsonl` "
                 "was not updated. Append a single-line JSON summary of your changes."
@@ -137,14 +173,14 @@ def main() -> int:
             print(f"  {i}. {err}")
         print("-" * 72)
         print("AGENT REMEDIATION REQUIRED:")
-        print("  -> Register any new/modified modules in `.eden/REGISTRY.md`")
+        print("  -> Register any new/modified modules in `.eden/REGISTRY.md` (or run python scripts/eden-index.py)")
         print("  -> Append a valid JSON entry to `.eden/CHANGELOG_AGENT.jsonl`")
         print("  -> Record any non-obvious bugs/fixes in `.eden/LEARNINGS.md`")
-        print("  -> Re-run: `python3 scripts/eden-audit.py`")
+        print("  -> Re-run: `python scripts/eden-audit.py`")
         print("=" * 72)
         return 1
 
-    print("[EDEN-AUDIT] PASSED: Repository state and registry are synchronized.")
+    print("✅ [EDEN-AUDIT] PASSED: Repository state and registry are synchronized.")
     return 0
 
 

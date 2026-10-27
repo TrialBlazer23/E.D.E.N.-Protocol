@@ -10,9 +10,9 @@
 | File Path | Exported Symbols / Key API | Responsibility | Consumers |
 | :--- | :--- | :--- | :--- |
 | `init-eden.ps1` | *(script / definitions)* | Module `init-eden.ps1` | `init-eden.sh`, `eden-audit.py` |
-| `init-eden.sh` | *(script / definitions)* | E.D.E.N. Protocol Repository Scaffolder (init-eden.sh) | `eden-audit.py` |
-| `scripts/eden-audit.py` | `get_git_changes()`, `is_tracked_code_file()`, `parse_banned_imports()`, `validate_ch... | E.D.E.N. Protocol Compliance Auditor (Zero-Dependency) | `init-eden.ps1`, `init-eden.sh`, `eden-index.py` |
-| `scripts/eden-index.py` | `clean_table_cell()`, `extract_python()`, `extract_kotlin()`, `extract_ts_js()`, `ext... | E.D.E.N. Protocol Auto-Indexer (Zero-Dependency) | Entrypoint / Unreferenced |
+| `init-eden.sh` | *(script / definitions)* | E.D.E.N. Protocol Repository Bootstrapper (init-eden.sh) | `eden-audit.py` |
+| `scripts/eden-audit.py` | `find_repo_root()`, `get_git_changes()`, `is_tracked_code_file()`, `parse_banned_impo... | E.D.E.N. Protocol Compliance Auditor (Zero-Dependency) | `init-eden.ps1`, `init-eden.sh`, `eden-index.py` |
+| `scripts/eden-index.py` | `clean_table_cell()`, `extract_python()`, `extract_kotlin()`, `extract_ts_js()`, `ext... | E.D.E.N. Protocol Auto-Indexer (Zero-Dependency) | `init-eden.ps1`, `init-eden.sh`, `eden-audit.py` |
 
 ## 3. Data Schemas & State Files
 | Path | Format | Description |

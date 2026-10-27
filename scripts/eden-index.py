@@ -12,17 +12,26 @@ import re
 import sys
 from pathlib import Path
 
+# Safe Unicode output for Windows consoles (cp1252/ascii)
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # ------------------------------------------------------------------------------
 # Configuration & Filtering
 # ------------------------------------------------------------------------------
-CODE_EXTENSIONS = {".py", ".kt", ".kts", ".js", ".ts", ".tsx", ".sh", ".ps1", ".rs", ".go", ".c", ".cpp"}
+CODE_EXTENSIONS = {".py", ".kt", ".kts", ".js", ".ts", ".tsx", ".sh", ".ps1", ".rs", ".go", ".c", ".cpp", ".h"}
 DEPENDENCY_FILES = {
     "requirements.txt", "pyproject.toml", "package.json",
     "build.gradle", "build.gradle.kts", "libs.versions.toml", "Cargo.toml"
 }
 IGNORED_DIRS = {
     ".git", ".eden", ".venv", "venv", "env", "node_modules",
-    "build", "dist", "target", "out", "__pycache__", ".gradle", ".idea", ".vscode"
+    "build", "dist", "target", "out", "__pycache__", ".gradle", ".idea", ".vscode", "docs",
+    "third_party", "test", "androidTest", ".cxx", "schemas"
 }
 
 MAX_SYMBOLS_PER_FILE = 8  # Caps table width so REGISTRY.md stays token-efficient
@@ -138,7 +147,7 @@ def extract_generic_regex(content: str, suffix: str) -> tuple[list[str], str]:
                 doc_summary = cleaned
                 break
 
-    if suffix == ".sh":
+    if suffix in {".sh", ".ps1"}:
         for m in re.finditer(r"^\s*(?:function\s+)?([a-zA-Z0-9_\-]+)\s*\(\)\s*\{", content, re.MULTILINE):
             symbols.append(f"`{m.group(1)}()`")
     elif suffix == ".rs":
@@ -147,6 +156,9 @@ def extract_generic_regex(content: str, suffix: str) -> tuple[list[str], str]:
             symbols.append(f"`{m.group(2)}{suffix_str}`")
     elif suffix == ".go":
         for m in re.finditer(r"^\s*(?:func|type)\s+(?:\([^)]+\)\s+)?([A-Z][A-Za-z0-9_]*)", content, re.MULTILINE):
+            symbols.append(f"`{m.group(1)}`")
+    elif suffix in {".c", ".cpp", ".h"}:
+        for m in re.finditer(r"^\s*(?:class|struct)\s+([A-Za-z0-9_]+)", content, re.MULTILINE):
             symbols.append(f"`{m.group(1)}`")
 
     return symbols, doc_summary
@@ -164,11 +176,17 @@ def infer_responsibility(rel_path: str, doc_summary: str) -> str:
         "orchestrator": "Core execution & agent orchestration loop",
         "server": "Local server & request handler",
         "client": "API / network client wrapper",
+        "dao": "Room / SQLite Data Access Object",
+        "database": "Local database definition & migrations",
+        "entity": "Database entity schema",
         "db": "Local database & persistence layer",
         "models": "Data structures and domain models",
         "utils": "Shared helper utilities",
         "viewmodel": "UI state holder and business logic",
         "repository": "Data source coordination layer",
+        "screen": "UI Composable screen presentation",
+        "component": "Modular UI component",
+        "theme": "Design system & Compose styling",
     }
     for key, desc in heuristics.items():
         if key in stem:
@@ -185,23 +203,23 @@ def scan_codebase(root: Path):
 
     for dirpath, dirnames, filenames in os.walk(root):
         # Prune ignored directories in-place for low-memory traversal
-        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS and not d.startswith(".Eden")]
+        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS and not d.startswith(".")]
 
         for fname in sorted(filenames):
             fpath = Path(dirpath) / fname
             rel_path = fpath.relative_to(root).as_posix()
 
-            if fname in DEPENDENCY_FILES:
+            if fname in DEPENDENCY_FILES and not any(part in IGNORED_DIRS for part in fpath.parts):
                 dep_manifests.append(rel_path)
 
-            if fpath.suffix in CODE_EXTENSIONS:
+            if fpath.suffix in CODE_EXTENSIONS and not any(part in IGNORED_DIRS for part in fpath.parts):
                 code_files.append((rel_path, fpath))
 
     return code_files, dep_manifests
 
 
 def build_module_rows(code_files: list[tuple[str, Path]]) -> list[str]:
-    """Parses all files and cross-references stems to infer 'Consumers'."""
+    """Parses files and performs high-speed token set cross-referencing to infer 'Consumers'."""
     parsed_records = []
     file_contents_cache = {}
 
@@ -234,16 +252,21 @@ def build_module_rows(code_files: list[tuple[str, Path]]) -> list[str]:
         responsibility = infer_responsibility(rel_path, doc)
         parsed_records.append((rel_path, symbol_str, responsibility))
 
-    # Cross-reference module names across files to populate 'Consumers'
+    # Build token cache for O(1) consumer lookup across files
+    file_tokens_cache = {}
+    for rel_path, content in file_contents_cache.items():
+        file_tokens_cache[rel_path] = set(re.findall(r"\b[A-Za-z0-9_]{4,}\b", content))
+
+    # Cross-reference module stems across files to populate 'Consumers'
     rows = []
     for rel_path, symbol_str, responsibility in parsed_records:
         stem = Path(rel_path).stem
         consumers = []
         if stem not in {"__init__", "index", "main", "MainActivity"} and len(stem) > 3:
-            pattern = re.compile(rf"\b{re.escape(stem)}\b")
-            for other_path, other_content in file_contents_cache.items():
-                if other_path != rel_path and pattern.search(other_content):
-                    consumers.append(f"`{Path(other_path).name}`")
+            consumers = [
+                f"`{Path(p).name}`" for p, tokens in file_tokens_cache.items()
+                if p != rel_path and stem in tokens
+            ]
 
         if consumers:
             consumer_str = ", ".join(consumers[:3]) + ("..." if len(consumers) > 3 else "")
@@ -272,13 +295,12 @@ def update_registry_file(module_rows: list[str], dep_manifests: list[str], regis
     new_section_2_body = f"{section_2_header}\n{table_header}\n" + "\n".join(module_rows) + "\n"
 
     if not registry_path.exists():
-        # Create fresh REGISTRY.md if none exists
         manifests_note = ", ".join(f"`{m}`" for m in dep_manifests) if dep_manifests else "None detected"
         content = f"""# COMPONENT & DEPENDENCY REGISTRY
 > **AGENT RULE:** Check this registry BEFORE writing any new helper or installing any package.
 > To ban a duplicate library, list `BANNED: package_name` in the Notes column (enforced by `eden-audit.py`).
 
-## 1. External Dependencies
+## 1. Approved External Dependencies
 *Detected Manifests: {manifests_note}*
 
 | Package | Purpose | Constraint / Notes |
@@ -291,11 +313,13 @@ def update_registry_file(module_rows: list[str], dep_manifests: list[str], regis
 | :--- | :--- | :--- |
 | `.eden/CHANGELOG_AGENT.jsonl` | JSONL | Append-only agent mutation history |
 | `.eden/LEARNINGS.md` | Markdown | Persistent environment & debugging memory |
+| `.eden/ARCHITECTURE.md` | Markdown | Project constraints and data flow |
+| `.eden/PLAN.md` | Markdown | Active task scope and milestones |
 """
         registry_path.write_text(content, encoding="utf-8")
         return
 
-    # If REGISTRY.md exists, surgically replace ONLY Section 2 so manual notes & BANNED rules survive
+    # If REGISTRY.md exists, surgically replace ONLY Section 2
     existing = registry_path.read_text(encoding="utf-8")
     pattern = re.compile(
         r"(## 2\. Internal Modules & Source Files.*?)(\n## 3\.|\Z)",
@@ -309,9 +333,14 @@ def update_registry_file(module_rows: list[str], dep_manifests: list[str], regis
 
 
 def main() -> int:
-    root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
+    if len(sys.argv) > 1 and sys.argv[1] != ".":
+        root = Path(sys.argv[1]).resolve()
+    else:
+        script_root = Path(__file__).resolve().parent.parent
+        root = script_root if (script_root / ".eden").is_dir() else Path.cwd()
+
     registry_path = root / ".eden" / "REGISTRY.md"
-    print(f"[EDEN-INDEX] Scanning codebase at: {root}")
+    print(f"[EDEN-INDEX] Scanning production codebase at: {root}")
 
     code_files, dep_manifests = scan_codebase(root)
     if not code_files:
@@ -321,7 +350,7 @@ def main() -> int:
     rows = build_module_rows(code_files)
     update_registry_file(rows, dep_manifests, registry_path)
 
-    print(f"[EDEN-INDEX] Indexed {len(rows)} source files into {registry_path}")
+    print(f"[EDEN-INDEX] Indexed {len(rows)} production source files into {registry_path}")
     if dep_manifests:
         print(f"[EDEN-INDEX] Detected dependency manifests: {', '.join(dep_manifests)}")
     return 0
