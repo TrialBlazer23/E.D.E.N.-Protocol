@@ -1,10 +1,14 @@
-# AGENT LEARNINGS & ENVIRONMENT QUIRKS
-> **AGENT INSTRUCTION:** Read before executing. Append new entries when you resolve a non-obvious bug or environment constraint. Keep entries concise.
+# LEARNINGS
 
-## Environment & Tooling Rules
-- **Python Env:** Always use the local `.venv/bin/python` — system pip is externally managed.
-- **Hardware Ceiling:** Target environment is constrained (4GB RAM / Mobile Edge). Avoid loading full datasets into memory; use generators/streams.
+Verified root causes of non-obvious problems in this project. Add an entry only after you have confirmed the cause and the fix.
 
-## Resolved Pitfalls (Do Not Repeat)
-- **[2026-10-23] Port Binding:** Local orchestrator requires explicit check that port 8080 is listening before firing requests; use `src/utils/net.py:wait_for_port()`.
-- **[2026-10-23] Windows output:** Console encoding may reject Unicode status markers; compliance tooling uses ASCII status output.
+<!--
+Format (one line per entry):
+- [YYYY-MM-DD] Subsystem: Symptom -> Root cause -> Fix / rule
+-->
+
+## Entries
+- [2026-10-23] Windows output: console rejects Unicode status markers -> cp1252 console encoding -> tools print ASCII status lines and reconfigure stdout with errors="replace".
+- [2026-10-30] PowerShell: pointer files began with a BOM and garbled em-dashes -> `Set-Content -Encoding utf8` on 5.1 writes a BOM, and 5.1 reads a BOM-less UTF-8 .ps1 as ANSI -> keep `init-eden.ps1` ASCII-only and copy files byte-for-byte; write generated files with UTF8Encoding($false).
+- [2026-10-30] Audit: files inside a new folder were not seen -> `git status --porcelain` collapses untracked dirs to `?? dir/` -> use `--untracked-files=all`.
+- [2026-10-30] Audit: CI always passed -> a clean checkout has no working-tree changes -> CI must use `--base <ref>` with full history (`fetch-depth: 0`).

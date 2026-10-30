@@ -1,11 +1,8 @@
-﻿---
-description: E.D.E.N. Protocol Master Rule
-globs: *
+---
+description: E.D.E.N. Protocol - follow AGENTS.md
 alwaysApply: true
 ---
-# E.D.E.N. PROTOCOL ENFORCEMENT
-All code generation and modification must adhere to AGENTS.md and the .eden/ control plane.
-1. Evaluate: Read .eden/ARCHITECTURE.md and .eden/REGISTRY.md.
-2. Define: Search .eden/REGISTRY.md before writing helpers or installing packages.
-3. Execute: Adhere to hardware and memory constraints.
-4. Normalize: Update .eden/REGISTRY.md, .eden/CHANGELOG_AGENT.jsonl, and run python scripts/eden-audit.py.
+# E.D.E.N. Protocol pointer
+Read AGENTS.md first; it holds the commands, task lanes, and rules.
+Search .eden/REGISTRY.md before adding helpers or packages.
+Before finishing a code change, run `python3 scripts/eden-audit.py --verify`.

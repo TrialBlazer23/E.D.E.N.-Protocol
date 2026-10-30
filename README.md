@@ -24,7 +24,7 @@ Modern autonomous AI coding agents (Claude Code, Cursor, GitHub Copilot, Gemini 
 
 Passive prompt instructions fail to prevent this because prompts degrade as context windows fill.
 
-The **E.D.E.N. Protocol** turns passive instructions into an **active, state-driven filesystem harness**. Built on plain Markdown, JSONL, and zero-dependency audit scripts, E.D.E.N. forces agents through a strict 4-phase execution loop that mechanically prevents drift and duplication.
+The **E.D.E.N. Protocol** turns passive instructions into an **active, state-driven filesystem harness**. Built on plain Markdown, JSONL, and zero-dependency audit scripts, E.D.E.N. routes agents through a lane-based execution loop that mechanically prevents drift and duplication.
 
 ---
 
@@ -39,42 +39,31 @@ Every AI agent operating in an E.D.E.N.-governed repository must adhere strictly
 
 ---
 
-## 3. The 4-Phase E.D.E.N. Execution Loop
+## 3. The E.D.E.N. Execution Loop
 
-Agents are barred from writing or modifying source code until Phases 1 and 2 are satisfied, and tasks are marked incomplete until Phase 4 passes compliance checks.
+`AGENTS.md` is short decision rules, not ceremony. Agents first pick a lane:
+
+| Lane | Examples | What runs |
+| :--- | :--- | :--- |
+| Read-only | questions, reviews | read and answer; no Normalize |
+| Trivial | typo, comment, docs-only | change + audit |
+| Normal | code change inside the current design | full loop |
+| Architectural | new boundary, dependency, schema, deletion | Evaluate + Define, write plan, **wait for approval** |
 
 ```mermaid
 flowchart LR
-    A["1. E — Evaluate<br/>(Context Ingestion)"] --> B["2. D — Define<br/>(Anti-Duplication Gate)"]
-    B --> C["3. E — Execute<br/>(Lean Implementation)"]
-    C --> D["4. N — Normalize<br/>(State Sync & Audit)"]
-    D -.->|Failed Audit| C
+    A["E - Evaluate<br/>(read .eden/)"] --> B["D - Define<br/>(reuse from REGISTRY)"]
+    B --> C["E - Execute<br/>(smallest change)"]
+    C --> D["N - Normalize<br/>(registry, changelog, audit --verify)"]
+    D -.->|audit or tests fail, max 3 rounds| C
 ```
 
-### Phase 1: E — Evaluate (Context Ingestion)
-Before proposing or writing any code, the agent ingests the project control plane:
-1. `.eden/ARCHITECTURE.md` — Hardware ceilings, system boundaries, memory limits, and data flows.
-2. `.eden/REGISTRY.md` — Complete index of existing modules, APIs, and approved dependencies.
-3. `.eden/LEARNINGS.md` — Documented environment quirks, edge cases, and resolved pitfalls.
-4. `tail -n 10 .eden/CHANGELOG_AGENT.jsonl` — Recent mutations for immediate context.
+1. **Evaluate:** read `.eden/ARCHITECTURE.md`, `.eden/REGISTRY.md`, `.eden/LEARNINGS.md`, and the last 10 lines of `.eden/CHANGELOG_AGENT.jsonl`.
+2. **Define:** check `.eden/PLAN.md`; search the registry and reuse or extend before adding helpers or packages.
+3. **Execute:** smallest change that meets the acceptance criteria.
+4. **Normalize:** register changed source files, append a changelog line listing them, record verified learnings, update the plan, and run `python3 scripts/eden-audit.py --verify`.
 
-### Phase 2: D — Define (The Anti-Duplication Gate)
-1. Check `.eden/PLAN.md` for active sprint scope and task criteria.
-2. **Anti-Duplication Shield:** Query `.eden/REGISTRY.md` before creating any function, class, or utility. If an equivalent or overlapping component exists, the agent **must** reuse or extend it.
-3. Formulate an execution plan explicitly listing the files to be modified and existing registry modules being reused.
-
-### Phase 3: E — Execute (Lean Implementation)
-1. Implement the solution adhering to the hardware constraints defined in `.eden/ARCHITECTURE.md`.
-2. Adhere to single-responsibility and clean architectural boundaries.
-3. Strip unused imports, dead code, and placeholders immediately.
-
-### Phase 4: N — Normalize (State Synchronization & Audit Gate)
-The task is **incomplete** until repository state is synchronized:
-1. **Update `.eden/REGISTRY.md`:** Index every new or modified module, API, and approved dependency.
-2. **Append to `.eden/CHANGELOG_AGENT.jsonl`:** Append a single-line JSON audit record.
-3. **Update `.eden/LEARNINGS.md`:** Record any resolved non-obvious bug or runtime trap.
-4. **Update `.eden/PLAN.md`:** Mark completed criteria and update active backlog.
-5. **Run Compliance Audit:** Execute `python scripts/eden-audit.py`. If the audit fails (exit code `1`), the agent must remediate before returning control.
+**Done** = tests / `.eden/verify` pass + audit passes + acceptance criteria met. After 3 failed fix rounds the agent stops and reports to a human. `AGENTS.md` also defines what happens when a request conflicts with `PLAN.md`, and a short never-do list.
 
 ---
 
@@ -91,45 +80,58 @@ my-project/
 │   └── copilot-instructions.md# Copilot Trampoline -> AGENTS.md
 ├── GEMINI.md                  # Gemini / Antigravity Trampoline -> AGENTS.md
 ├── .eden/
-│   ├── ARCHITECTURE.md        # Hardware ceilings, memory budgets, runtime specs
+│   ├── ARCHITECTURE.md        # Runtime, limits, data flow, invariants
 │   ├── REGISTRY.md            # Anti-Duplication Component & Dependency Map
 │   ├── PLAN.md                # Active sprint backlog & task acceptance criteria
 │   ├── LEARNINGS.md           # Episodic memory of bugs, pitfalls, and fixes
-│   └── CHANGELOG_AGENT.jsonl  # Append-only machine-readable mutation history
+│   ├── CHANGELOG_AGENT.jsonl  # Append-only machine-readable mutation history
+│   └── verify / verify.py     # Optional: project test + lint commands run by audit --verify
 ├── scripts/
 │   ├── eden-audit.py          # Zero-dependency compliance auditor
 │   └── eden-index.py          # Zero-dependency AST/regex component indexer
 └── docs/                      # Human & project documentation
 ```
 
+The protocol repository itself also contains `templates/` (the `.eden/` starter files and the pre-commit hook copied by the init scripts) and `tests/` (stdlib `unittest` smoke tests).
+
 ---
 
 ## 5. Quickstart
 
 ### Bootstrapping a Repository
-To scaffold the E.D.E.N. Protocol into any new or existing repository:
+Clone this repository once, then run its bootstrapper from the root of the repository you want to govern (or pass that path):
 
 **Linux / macOS / Termux / PRoot / WSL:**
 ```bash
-./init-eden.sh
+/path/to/E.D.E.N-Protocol/init-eden.sh [--force] [--name NAME] [TARGET_DIR]
 ```
 
 **Windows PowerShell:**
 ```powershell
-.\init-eden.ps1
+C:\path\to\E.D.E.N-Protocol\init-eden.ps1 [-Force] [-ProjectName NAME] [TargetDir]
 ```
 
-The bootstrapper:
-1. Scaffolds `.eden/` and `.eden/CHANGELOG_AGENT.jsonl`.
-2. Generates the master `AGENTS.md` operating system.
-3. Generates universal forwarder trampolines for Claude Code, Cursor, Copilot, Gemini/Antigravity, and Windsurf.
-4. Installs the Git `.git/hooks/pre-commit` enforcement hook.
-5. Runs `eden-index.py` to auto-index existing source files.
+The bootstrapper (target defaults to the current directory):
+1. Copies `AGENTS.md` and the pointer files for Claude Code, Cursor, Copilot, Gemini/Antigravity, and Windsurf (byte-for-byte; no drift).
+2. Copies `scripts/eden-audit.py` and `scripts/eden-index.py`.
+3. Creates `.eden/` from `templates/eden/` and starts `.eden/CHANGELOG_AGENT.jsonl`.
+4. Installs the pre-commit hook (`eden-audit.py --staged`).
+5. Runs `eden-index.py` to index existing source files.
+
+Existing files are never overwritten unless you pass `--force` / `-Force`; replaced files are kept as `<file>.eden-bak`, and existing `.eden/` state is always kept. Set `EDEN_RAW_BASE` to a raw-file URL of this repository to download the files instead of using a local clone.
+
+Then fill in the `Commands` section of `AGENTS.md` and `.eden/ARCHITECTURE.md`, and optionally add `.eden/verify` with your test and lint commands.
 
 ### Verifying Compliance
-Run the compliance auditor at any time:
 ```bash
-python scripts/eden-audit.py
+python3 scripts/eden-audit.py                  # working tree, including new untracked folders
+python3 scripts/eden-audit.py --staged         # what the pre-commit hook runs
+python3 scripts/eden-audit.py --base origin/main --verify   # CI
+```
+
+### Testing this repository
+```bash
+python3 -m unittest discover -s tests          # or: python3 scripts/eden-audit.py --verify
 ```
 
 ---

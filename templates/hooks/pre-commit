@@ -1,0 +1,18 @@
+#!/bin/sh
+# E.D.E.N. Protocol pre-commit hook (installed by init-eden).
+# Audits only what is staged for this commit.
+ROOT="$(git rev-parse --show-toplevel)" || exit 1
+AUDIT="$ROOT/scripts/eden-audit.py"
+if [ ! -f "$AUDIT" ]; then
+    echo "[EDEN] $AUDIT is missing. Re-run init-eden, or remove .git/hooks/pre-commit." >&2
+    exit 1
+fi
+if command -v python3 >/dev/null 2>&1; then
+    PY=python3
+elif command -v python >/dev/null 2>&1; then
+    PY=python
+else
+    echo "[EDEN] Python 3 not found; cannot run the E.D.E.N. audit." >&2
+    exit 1
+fi
+exec "$PY" "$AUDIT" --root "$ROOT" --staged

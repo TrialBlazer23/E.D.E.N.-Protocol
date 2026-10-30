@@ -1,4 +1,4 @@
-﻿# .windsurfrules â€” E.D.E.N. PROTOCOL ROUTER
-Adhere to the E.D.E.N. Protocol defined in AGENTS.md and .eden/.
-Search .eden/REGISTRY.md before creating utilities.
-Execute the 4-phase loop and run python scripts/eden-audit.py before completing work.
+# .windsurfrules - E.D.E.N. Protocol pointer
+Read AGENTS.md first; it holds the commands, task lanes, and rules.
+Search .eden/REGISTRY.md before adding helpers or packages.
+Before finishing a code change, run `python3 scripts/eden-audit.py --verify`.

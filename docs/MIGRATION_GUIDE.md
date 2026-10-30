@@ -25,23 +25,27 @@ flowchart TD
 ```
 
 ### Step 1: Run the Bootstrapper
-Run the scaffolder inside the root of your existing repository:
+Clone the protocol repository somewhere outside your project, then run its bootstrapper from the root of your existing repository (or pass the repository path):
 
 **Linux / macOS / Termux:**
 ```bash
-./init-eden.sh
+/path/to/E.D.E.N-Protocol/init-eden.sh            # current directory
+/path/to/E.D.E.N-Protocol/init-eden.sh ~/src/app  # explicit target
 ```
 
 **Windows PowerShell:**
 ```powershell
-.\init-eden.ps1
+C:\src\E.D.E.N-Protocol\init-eden.ps1             # current directory
+C:\src\E.D.E.N-Protocol\init-eden.ps1 C:\src\app
 ```
+
+Existing `AGENTS.md`, pointer files, scripts, and pre-commit hooks are left alone; the bootstrapper lists what it skipped. Re-run with `--force` / `-Force` to replace them (each replaced file is kept as `<file>.eden-bak`). Existing `.eden/` state files are never replaced.
 
 This creates:
 - The `.eden/` control plane (`ARCHITECTURE.md`, `REGISTRY.md`, `PLAN.md`, `LEARNINGS.md`, `CHANGELOG_AGENT.jsonl`).
 - The `scripts/` directory with `eden-audit.py` and `eden-index.py`.
 - Universal forwarder trampolines (`CLAUDE.md`, `.cursorrules`, `.cursor/rules/eden.mdc`, `.github/copilot-instructions.md`, `GEMINI.md`, `.windsurfrules`).
-- The `.git/hooks/pre-commit` hook.
+- The `.git/hooks/pre-commit` hook (runs `eden-audit.py --staged`).
 
 ### Step 2: Auto-Index the Codebase
 Generate the initial index of your internal modules, classes, and exported APIs:
@@ -63,10 +67,10 @@ Verify that `.eden/REGISTRY.md` now lists your core modules in Section 2. Add an
 ### Step 5: Verify Compliance
 Record the migration in the agent mutation log:
 ```json
-{"timestamp": "2026-10-27T16:00:00Z", "phase": "Normalize", "task_id": "EDEN-MIGRATION", "action": "REFACTORED", "files": ["AGENTS.md", ".eden/*"], "reused_modules": [], "summary": "Migrated repository to E.D.E.N. Protocol control plane."}
+{"timestamp": "2026-10-27T16:00:00Z", "phase": "Normalize", "task_id": "EDEN-MIGRATION", "action": "REFACTORED", "files": ["AGENTS.md", ".eden/ARCHITECTURE.md", ".eden/PLAN.md", ".eden/REGISTRY.md"], "reused_modules": [], "summary": "Migrated repository to E.D.E.N. Protocol control plane."}
 ```
-Run the compliance auditor:
+Fill in the `Commands` section of `AGENTS.md`, optionally add `.eden/verify` with your test and lint commands, then run the compliance auditor:
 ```bash
-python scripts/eden-audit.py
+python3 scripts/eden-audit.py --verify
 ```
 When it exits with `0`, your repository is fully compliant and ready for autonomous agent development.

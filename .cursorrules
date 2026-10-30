@@ -1,6 +1,4 @@
-﻿# .cursorrules â€” E.D.E.N. PROTOCOL ROUTER
-# Governed by Necessity Labs E.D.E.N. Protocol.
-# Read and strictly adhere to AGENTS.md and the .eden/ control plane.
-Always read AGENTS.md, .eden/ARCHITECTURE.md, and .eden/REGISTRY.md before generating or modifying code.
-Follow the 4-phase loop: Evaluate -> Define -> Execute -> Normalize.
-Never create duplicate utilities. Run python scripts/eden-audit.py before finishing tasks.
+# .cursorrules - E.D.E.N. Protocol pointer (legacy; see .cursor/rules/eden.mdc)
+Read AGENTS.md first; it holds the commands, task lanes, and rules.
+Search .eden/REGISTRY.md before adding helpers or packages.
+Before finishing a code change, run `python3 scripts/eden-audit.py --verify`.
