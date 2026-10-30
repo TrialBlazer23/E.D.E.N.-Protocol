@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 E.D.E.N. Protocol Auto-Indexer (Zero-Dependency)
-Scans an existing repository (Python, Kotlin, TS/JS, Rust, Go, C/C++, Bash)
+Scans an existing repository (Python, Kotlin, Java, Scala, JS/TS, Vue, Svelte, Go, Rust,
+C/C++, C#, Swift, Dart, Ruby, PHP, shell)
 and populates Section 2 of .eden/REGISTRY.md with exported classes, functions,
 and inferred consumers so coding agents never duplicate existing components.
 """
@@ -12,27 +13,11 @@ import re
 import sys
 from pathlib import Path
 
-# Safe Unicode output for Windows consoles (cp1252/ascii)
-if hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from eden_common import (DEPENDENCY_FILES, configure_stdio, is_ignored_dir,  # noqa: E402
+                         is_protocol_repo, is_source_file)
 
-# ------------------------------------------------------------------------------
-# Configuration & Filtering
-# ------------------------------------------------------------------------------
-CODE_EXTENSIONS = {".py", ".kt", ".kts", ".js", ".ts", ".tsx", ".sh", ".ps1", ".rs", ".go", ".c", ".cpp", ".h"}
-DEPENDENCY_FILES = {
-    "requirements.txt", "pyproject.toml", "package.json",
-    "build.gradle", "build.gradle.kts", "libs.versions.toml", "Cargo.toml"
-}
-IGNORED_DIRS = {
-    ".git", ".eden", ".venv", "venv", "env", "node_modules",
-    "build", "dist", "target", "out", "__pycache__", ".gradle", ".idea", ".vscode", "docs",
-    "third_party", "test", "androidTest", ".cxx", "schemas"
-}
+configure_stdio()
 
 MAX_SYMBOLS_PER_FILE = 8  # Caps table width so REGISTRY.md stays token-efficient
 
@@ -134,7 +119,7 @@ def extract_ts_js(content: str) -> tuple[list[str], str]:
 
 
 def extract_generic_regex(content: str, suffix: str) -> tuple[list[str], str]:
-    """Fallback extractor for Bash, Rust, Go, and C/C++."""
+    """Regex extractor for shell, Rust, Go, C/C++, Java, C#, Scala, Swift, Dart, Ruby, and PHP."""
     symbols = []
     doc_summary = ""
 
@@ -160,6 +145,21 @@ def extract_generic_regex(content: str, suffix: str) -> tuple[list[str], str]:
     elif suffix in {".c", ".cpp", ".h"}:
         for m in re.finditer(r"^\s*(?:class|struct)\s+([A-Za-z0-9_]+)", content, re.MULTILINE):
             symbols.append(f"`{m.group(1)}`")
+    elif suffix in {".java", ".cs", ".scala", ".swift", ".dart", ".php"}:
+        type_re = (r"^\s*(?:(?:public|internal|protected|private|abstract|final|sealed|static|partial|"
+                   r"open|data|case|export|readonly)\s+)*"
+                   r"(class|interface|enum|record|struct|trait|object|protocol|mixin|extension)\s+"
+                   r"([A-Za-z_][A-Za-z0-9_]*)")
+        for m in re.finditer(type_re, content, re.MULTILINE):
+            symbols.append(f"`{m.group(2)}`")
+        if suffix == ".php":
+            for m in re.finditer(r"^function\s+([A-Za-z_][A-Za-z0-9_]*)", content, re.MULTILINE):
+                symbols.append(f"`{m.group(1)}()`")
+    elif suffix == ".rb":
+        for m in re.finditer(r"^\s*(class|module)\s+([A-Z][A-Za-z0-9_:]*)", content, re.MULTILINE):
+            symbols.append(f"`{m.group(2)}`")
+        for m in re.finditer(r"^def\s+(?:self\.)?([a-z_][A-Za-z0-9_?!]*)", content, re.MULTILINE):
+            symbols.append(f"`{m.group(1)}()`")
 
     return symbols, doc_summary
 
@@ -200,19 +200,20 @@ def infer_responsibility(rel_path: str, doc_summary: str) -> str:
 def scan_codebase(root: Path):
     code_files = []
     dep_manifests = []
+    include_eden = is_protocol_repo(root)
 
     for dirpath, dirnames, filenames in os.walk(root):
         # Prune ignored directories in-place for low-memory traversal
-        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS and not d.startswith(".")]
+        dirnames[:] = sorted(d for d in dirnames if not is_ignored_dir(d))
 
         for fname in sorted(filenames):
             fpath = Path(dirpath) / fname
             rel_path = fpath.relative_to(root).as_posix()
 
-            if fname in DEPENDENCY_FILES and not any(part in IGNORED_DIRS for part in fpath.parts):
+            if fname in DEPENDENCY_FILES:
                 dep_manifests.append(rel_path)
 
-            if fpath.suffix in CODE_EXTENSIONS and not any(part in IGNORED_DIRS for part in fpath.parts):
+            if is_source_file(rel_path, include_eden=include_eden):
                 code_files.append((rel_path, fpath))
 
     return code_files, dep_manifests
@@ -236,7 +237,7 @@ def build_module_rows(code_files: list[tuple[str, Path]]) -> list[str]:
             symbols, doc = extract_python(content)
         elif ext in {".kt", ".kts"}:
             symbols, doc = extract_kotlin(content)
-        elif ext in {".js", ".ts", ".tsx"}:
+        elif ext in {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".vue", ".svelte"}:
             symbols, doc = extract_ts_js(content)
         else:
             symbols, doc = extract_generic_regex(content, ext)
