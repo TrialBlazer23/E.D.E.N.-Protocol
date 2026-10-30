@@ -1,240 +1,162 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# E.D.E.N. Protocol Repository Bootstrapper (init-eden.sh)
-# Necessity Labs — Model-Agnostic Coding Agent Control Plane
+# E.D.E.N. Protocol bootstrapper (POSIX shell)
+#
+# Usage:
+#   /path/to/E.D.E.N-Protocol/init-eden.sh [--force] [--name NAME] [--source DIR] [TARGET_DIR]
+#
+#   TARGET_DIR   repository to initialize (default: current directory)
+#   --source     protocol checkout to copy from (default: the folder holding this script)
+#   --name       project name used in .eden/ARCHITECTURE.md (default: target folder name)
+#   --force      overwrite existing agent files, scripts, and hook; each is backed up as
+#                <file>.eden-bak. Existing .eden/ state files are always kept.
+#
+#   EDEN_RAW_BASE=https://raw.githubusercontent.com/<owner>/E.D.E.N-Protocol/main
+#                download the protocol files from this URL when --source has none.
+#
+# Existing files (AGENTS.md, pointer files, scripts, .eden/*, pre-commit hook) are
+# never overwritten without --force.
 # ==============================================================================
 set -euo pipefail
 
-PROJECT_NAME="${1:-$(basename "$PWD")}"
-TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+FORCE=0
+PROJECT_NAME=""
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET_DIR="."
 
-echo "⚡ Initializing E.D.E.N. Protocol scaffold for: ${PROJECT_NAME}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --force) FORCE=1 ;;
+    --name) PROJECT_NAME="$2"; shift ;;
+    --source) SOURCE_DIR="$(cd "$2" && pwd)"; shift ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -*) echo "Unknown option: $1" >&2; exit 2 ;;
+    *) TARGET_DIR="$1" ;;
+  esac
+  shift
+done
 
-mkdir -p .eden scripts .cursor/rules .github
+mkdir -p "$TARGET_DIR"
+TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+PROJECT_NAME="${PROJECT_NAME:-$(basename "$TARGET_DIR")}"
 
-# ------------------------------------------------------------------------------
-# 1. Master AGENTS.md
-# ------------------------------------------------------------------------------
-if [ ! -f AGENTS.md ]; then
-cat << 'EOF' > AGENTS.md
-# E.D.E.N. PROTOCOL: AGENT OPERATING SYSTEM
+# Files copied verbatim from the protocol repo (source path -> same target path).
+COPY_FILES="AGENTS.md CLAUDE.md GEMINI.md .cursorrules .windsurfrules .cursor/rules/eden.mdc .github/copilot-instructions.md scripts/eden-audit.py scripts/eden-index.py"
+TEMPLATE_FILES="templates/eden/ARCHITECTURE.md templates/eden/PLAN.md templates/eden/REGISTRY.md templates/eden/LEARNINGS.md templates/hooks/pre-commit"
 
-You are operating inside an **E.D.E.N.** governed repository (**Necessity Labs**).
-Adhere strictly to the **Law of Necessity**:
-- **E — Everything is broken:** Assume zero-trust defaults. Do not rely on fragile cloud dependencies or bloated abstractions.
-- **D — Define the mechanics:** Understand raw memory, I/O, ports, and execution constraints before touching code.
-- **E — Engineer the architecture:** Build modular, sovereign, local-first systems.
-- **N — Necessity dictates the output:** Zero dead code, zero duplicate utilities, zero unapproved packages.
-
----
-
-## MANDATORY 4-PHASE EXECUTION LOOP
-
-You MUST follow these phases sequentially for every task. Do NOT skip Phase 1, 2, or 4.
-
-### Phase 1: E — Evaluate (Context & Constraint Ingestion)
-Before proposing or writing any code, read:
-1. `.eden/ARCHITECTURE.md` — System boundaries, target hardware ceiling, and data flow.
-2. `.eden/REGISTRY.md` — Complete index of existing internal modules and approved dependencies.
-3. `.eden/LEARNINGS.md` — Known environment quirks and resolved pitfalls.
-4. Recent entries in `.eden/CHANGELOG_AGENT.jsonl` — Recent mutations for immediate context.
-
-### Phase 2: D — Define (The Anti-Duplication Gate)
-1. Check `.eden/PLAN.md` for the active task scope.
-2. **STRICT ANTI-DUPLICATION RULE:** Search `.eden/REGISTRY.md` before creating any helper, utility, or class. If a module with overlapping responsibility exists, you MUST import or extend it.
-3. State your execution plan briefly: list the exact files you will touch and which existing `REGISTRY.md` components you are reusing.
-
-### Phase 3: E — Execute (Lean Implementation)
-1. Implement the solution within the hardware and dependency constraints defined in `.eden/ARCHITECTURE.md`.
-2. Favor standard library primitives over third-party dependencies.
-3. Strip dead code and unused imports immediately.
-
-### Phase 4: N — Normalize (State Synchronization & Audit Gate)
-Your task is **INCOMPLETE** until all steps below are finished:
-1. **Update `.eden/REGISTRY.md`:** Add or update the row for every new/modified source file, exported class/function, or approved dependency.
-2. **Append to `.eden/CHANGELOG_AGENT.jsonl`:** Append a single-line valid JSON record at the bottom of the file using the standard schema.
-3. **Update `.eden/LEARNINGS.md`:** If you resolved an environment bug, build failure, or hardware quirk, document the root cause and fix.
-4. **Update `.eden/PLAN.md`:** Mark completed criteria and update active backlog.
-5. **Run the Compliance Audit:** Execute `python3 scripts/eden-audit.py` and resolve any reported errors before returning your final response.
-EOF
-  echo "  [+] Created AGENTS.md"
-else
-  echo "  [~] AGENTS.md already exists (skipped)"
-fi
-
-# ------------------------------------------------------------------------------
-# 2. .eden Control Plane Files
-# ------------------------------------------------------------------------------
-if [ ! -f .eden/ARCHITECTURE.md ]; then
-cat << EOF > .eden/ARCHITECTURE.md
-# SYSTEM ARCHITECTURE & CONSTRAINTS (${PROJECT_NAME})
-
-This file records project-specific constraints.
-
-## 1. Runtime and Dependency Constraints
-- **Primary languages:** Define per project.
-- **Supported environments:** Define per project.
-- **Memory and performance ceiling:** Define measurable limits when known.
-- **Network and persistence:** Document required local services, ports, and data stores.
-
-## 2. Core Data Flow
-\`\`\`text
-[Input] -> [Application Boundary] -> [Domain Logic] -> [Local State / Output]
-\`\`\`
-EOF
-  echo "  [+] Created .eden/ARCHITECTURE.md"
-fi
-
-if [ ! -f .eden/PLAN.md ]; then
-cat << 'EOF' > .eden/PLAN.md
-# ACTIVE EXECUTION PLAN
-
-## Current Objective
-- [ ] **TASK-01:** Define initial system architecture in `.eden/ARCHITECTURE.md` and register source files in `.eden/REGISTRY.md`.
-
-## Backlog
-- [ ] **TASK-02:** [Add next milestone]
-
-## Completed
-- [x] **TASK-00:** Initialized E.D.E.N. Protocol repository control plane.
-EOF
-  echo "  [+] Created .eden/PLAN.md"
-fi
-
-if [ ! -f .eden/REGISTRY.md ]; then
-cat << 'EOF' > .eden/REGISTRY.md
-# COMPONENT & DEPENDENCY REGISTRY
-> **AGENT RULE:** Check this registry BEFORE writing any new helper or installing any package.
-> To ban a duplicate library, list `BANNED: package_name` in the Notes column (enforced by `eden-audit.py`).
-
-## 1. Approved External Dependencies
-| Package | Purpose | Constraint / Notes |
-| :--- | :--- | :--- |
-| `standard-library` | Default runtime primitives | Always prefer stdlib first |
-
-## 2. Internal Modules & Source Files (Reuse Mandatory)
-| File Path | Exported Symbols / Key API | Responsibility | Consumers |
-| :--- | :--- | :--- | :--- |
-
-## 3. Configuration & State Schemas
-| Path | Type | Description |
-| :--- | :--- | :--- |
-| `.eden/CHANGELOG_AGENT.jsonl` | JSONL | Append-only agent mutation history |
-| `.eden/LEARNINGS.md` | Markdown | Persistent environment & debugging memory |
-| `.eden/ARCHITECTURE.md` | Markdown | Project constraints and data flow |
-| `.eden/PLAN.md` | Markdown | Active task scope and milestones |
-EOF
-  echo "  [+] Created .eden/REGISTRY.md"
-fi
-
-if [ ! -f .eden/LEARNINGS.md ]; then
-cat << 'EOF' > .eden/LEARNINGS.md
-# AGENT LEARNINGS & ENVIRONMENT QUIRKS
-> Record concise root-cause notes for non-obvious project, dependency, or runtime issues.
-EOF
-  echo "  [+] Created .eden/LEARNINGS.md"
-fi
-
-if [ ! -f .eden/CHANGELOG_AGENT.jsonl ] || [ ! -s .eden/CHANGELOG_AGENT.jsonl ]; then
-cat << EOF > .eden/CHANGELOG_AGENT.jsonl
-{"timestamp": "${TIMESTAMP}", "phase": "Normalize", "task_id": "TASK-00", "action": "CREATED", "files": ["AGENTS.md", ".eden/ARCHITECTURE.md", ".eden/PLAN.md", ".eden/LEARNINGS.md", ".eden/REGISTRY.md"], "reused_modules": [], "summary": "Initialized the E.D.E.N. control plane."}
-EOF
-  echo "  [+] Created .eden/CHANGELOG_AGENT.jsonl"
-fi
-
-# ------------------------------------------------------------------------------
-# 3. Universal Multi-Agent Forwarder Trampolines
-# ------------------------------------------------------------------------------
-cat << 'EOF' > CLAUDE.md
-# CLAUDE.md — E.D.E.N. PROTOCOL ROUTER
-
-> **MANDATORY FOR CLAUDE CODE:** This repository is strictly governed by the **E.D.E.N. Protocol** (Necessity Labs).
-> All operating instructions, 4-phase execution loop, build commands, and architectural invariants are defined in:
->
-> 1. [`AGENTS.md`](AGENTS.md) — Master Agent Operating System & Execution Loop
-> 2. [`.eden/ARCHITECTURE.md`](.eden/ARCHITECTURE.md) — System boundaries, hardware ceiling, and constraints
-> 3. [`.eden/REGISTRY.md`](.eden/REGISTRY.md) — Component registry & anti-duplication shield
-> 4. [`.eden/PLAN.md`](.eden/PLAN.md) — Active task scope and acceptance criteria
-> 5. [`.eden/LEARNINGS.md`](.eden/LEARNINGS.md) — Persistent episodic memory of resolved pitfalls
->
-> You MUST read AGENTS.md before proposing or writing code. Do NOT bypass Phase 1 (Evaluate) or Phase 2 (Define).
-EOF
-
-cat << 'EOF' > .cursorrules
-# .cursorrules — E.D.E.N. PROTOCOL ROUTER
-# Governed by Necessity Labs E.D.E.N. Protocol.
-# Read and strictly adhere to AGENTS.md and the .eden/ control plane.
-Always read AGENTS.md, .eden/ARCHITECTURE.md, and .eden/REGISTRY.md before generating or modifying code.
-Follow the 4-phase loop: Evaluate -> Define -> Execute -> Normalize.
-Never create duplicate utilities. Run python scripts/eden-audit.py before finishing tasks.
-EOF
-
-cat << 'EOF' > .cursor/rules/eden.mdc
----
-description: E.D.E.N. Protocol Master Rule
-globs: *
-alwaysApply: true
----
-# E.D.E.N. PROTOCOL ENFORCEMENT
-All code generation and modification must adhere to AGENTS.md and the .eden/ control plane.
-1. Evaluate: Read .eden/ARCHITECTURE.md and .eden/REGISTRY.md.
-2. Define: Search .eden/REGISTRY.md before writing helpers or installing packages.
-3. Execute: Adhere to hardware and memory constraints.
-4. Normalize: Update .eden/REGISTRY.md, .eden/CHANGELOG_AGENT.jsonl, and run python scripts/eden-audit.py.
-EOF
-
-cat << 'EOF' > .github/copilot-instructions.md
-# GitHub Copilot Custom Instructions — E.D.E.N. Protocol
-This repository adheres to the E.D.E.N. Protocol (Necessity Labs).
-- Read and follow AGENTS.md for all architectural invariants and coding rules.
-- Consult .eden/REGISTRY.md before creating new utilities to avoid duplication.
-- Obey memory ceilings and hardware constraints specified in .eden/ARCHITECTURE.md.
-- Run `python scripts/eden-audit.py` to verify state compliance.
-EOF
-
-cat << 'EOF' > GEMINI.md
-# GEMINI.md — E.D.E.N. PROTOCOL ROUTER
-This repository operates under the E.D.E.N. Protocol (Necessity Labs).
-Read AGENTS.md and the .eden/ control plane before proposing or modifying code.
-Strictly execute the 4-phase loop: Evaluate -> Define -> Execute -> Normalize.
-Never duplicate existing utilities. Run python scripts/eden-audit.py before returning results.
-EOF
-
-cat << 'EOF' > .windsurfrules
-# .windsurfrules — E.D.E.N. PROTOCOL ROUTER
-Adhere to the E.D.E.N. Protocol defined in AGENTS.md and .eden/.
-Search .eden/REGISTRY.md before creating utilities.
-Execute the 4-phase loop and run python scripts/eden-audit.py before completing work.
-EOF
-
-echo "  [+] Deployed universal multi-agent trampolines (CLAUDE, Cursor, Copilot, Gemini, Windsurf)"
-
-# ------------------------------------------------------------------------------
-# 4. Git Pre-Commit Hook
-# ------------------------------------------------------------------------------
-if [ -d .git ]; then
-  mkdir -p .git/hooks
-  cat << 'EOF' > .git/hooks/pre-commit
-#!/bin/sh
-if command -v python3 >/dev/null 2>&1; then
-    python3 scripts/eden-audit.py
-elif command -v python >/dev/null 2>&1; then
-    python scripts/eden-audit.py
-fi
-EOF
-  chmod +x .git/hooks/pre-commit
-  echo "  [+] Installed .git/hooks/pre-commit enforcement hook"
-fi
-
-# ------------------------------------------------------------------------------
-# 5. Run Auto-Indexer
-# ------------------------------------------------------------------------------
-if [ -f scripts/eden-index.py ]; then
-  if command -v python3 >/dev/null 2>&1; then
-    python3 scripts/eden-index.py .
-  elif command -v python >/dev/null 2>&1; then
-    python scripts/eden-index.py .
+# Fetch the protocol files if the source folder does not have them.
+if [ ! -f "$SOURCE_DIR/scripts/eden-audit.py" ] || [ ! -f "$SOURCE_DIR/templates/hooks/pre-commit" ]; then
+  if [ -z "${EDEN_RAW_BASE:-}" ]; then
+    echo "ERROR: $SOURCE_DIR is not an E.D.E.N.-Protocol checkout (scripts/ or templates/ missing)." >&2
+    echo "       Run this script from a clone of the protocol repo, pass --source DIR, or set EDEN_RAW_BASE." >&2
+    exit 1
   fi
+  TMP_SRC="$(mktemp -d)"
+  trap 'rm -rf "$TMP_SRC"' EXIT
+  echo "Downloading protocol files from $EDEN_RAW_BASE"
+  for f in $COPY_FILES $TEMPLATE_FILES; do
+    mkdir -p "$TMP_SRC/$(dirname "$f")"
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL "$EDEN_RAW_BASE/$f" -o "$TMP_SRC/$f"
+    else
+      wget -q "$EDEN_RAW_BASE/$f" -O "$TMP_SRC/$f"
+    fi
+  done
+  SOURCE_DIR="$TMP_SRC"
 fi
 
-echo "✅ E.D.E.N. Scaffold Ready. Test compliance with: python scripts/eden-audit.py"
+if [ "$SOURCE_DIR" = "$TARGET_DIR" ]; then
+  echo "ERROR: target is the protocol repo itself. Run this from (or point it at) the repo you want to initialize." >&2
+  exit 1
+fi
+
+cd "$TARGET_DIR"
+echo "Initializing E.D.E.N. Protocol in $TARGET_DIR (project: $PROJECT_NAME)"
+
+SKIPPED=0
+BACKUPS=0
+# install_file SRC DEST [MODE] [keep]   ("keep" = project state; never replaced, even with --force)
+install_file() {
+  local src="$1" dest="$2" mode="${3:-}" keep="${4:-}"
+  mkdir -p "$(dirname "$dest")"
+  if [ -e "$dest" ]; then
+    if cmp -s "$src" "$dest"; then
+      echo "  [=] $dest (already up to date)"
+      return 0
+    fi
+    if [ "$keep" = "keep" ]; then
+      echo "  [=] $dest exists (project state; kept)"
+      return 0
+    fi
+    if [ "$FORCE" -ne 1 ]; then
+      echo "  [~] $dest exists; skipped (re-run with --force to replace it; a backup is kept)"
+      SKIPPED=1
+      return 0
+    fi
+    cp -p "$dest" "$dest.eden-bak"
+    BACKUPS=1
+    echo "  [!] $dest replaced (backup: $dest.eden-bak)"
+  else
+    echo "  [+] $dest"
+  fi
+  cp "$src" "$dest"
+  if [ -n "$mode" ]; then chmod "$mode" "$dest"; fi
+}
+
+# 1. Agent instructions, pointer files, and tooling
+for f in $COPY_FILES; do
+  case "$f" in
+    scripts/*) install_file "$SOURCE_DIR/$f" "$f" 755 ;;
+    *) install_file "$SOURCE_DIR/$f" "$f" ;;
+  esac
+done
+
+# 2. Control plane templates
+TMP_ARCH="$(mktemp)"
+sed "s/{{PROJECT_NAME}}/$(printf '%s' "$PROJECT_NAME" | sed 's/[\/&]/\\&/g')/g" \
+  "$SOURCE_DIR/templates/eden/ARCHITECTURE.md" > "$TMP_ARCH"
+install_file "$TMP_ARCH" ".eden/ARCHITECTURE.md" "" keep
+rm -f "$TMP_ARCH"
+for f in PLAN.md REGISTRY.md LEARNINGS.md; do
+  install_file "$SOURCE_DIR/templates/eden/$f" ".eden/$f" "" keep
+done
+
+if [ ! -s .eden/CHANGELOG_AGENT.jsonl ]; then
+  TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  printf '%s\n' "{\"timestamp\":\"${TIMESTAMP}\",\"phase\":\"Normalize\",\"task_id\":\"TASK-00\",\"action\":\"CREATED\",\"files\":[\"AGENTS.md\",\".eden/ARCHITECTURE.md\",\".eden/PLAN.md\",\".eden/REGISTRY.md\",\".eden/LEARNINGS.md\"],\"reused_modules\":[],\"summary\":\"Initialized the E.D.E.N. control plane.\"}" > .eden/CHANGELOG_AGENT.jsonl
+  echo "  [+] .eden/CHANGELOG_AGENT.jsonl"
+else
+  echo "  [=] .eden/CHANGELOG_AGENT.jsonl (kept; append-only)"
+fi
+
+# 3. Git pre-commit hook (respects core.hooksPath and worktrees)
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  HOOKS_DIR="$(git rev-parse --git-path hooks)"
+  install_file "$SOURCE_DIR/templates/hooks/pre-commit" "$HOOKS_DIR/pre-commit" 755
+  if [ -e "$HOOKS_DIR/pre-commit" ] && ! grep -q "eden-audit.py" "$HOOKS_DIR/pre-commit"; then
+    echo "      Your existing hook does not run the audit. Add this line to it:"
+    echo "      python3 scripts/eden-audit.py --staged || exit 1"
+  elif ! grep -q -- "--staged" "$HOOKS_DIR/pre-commit"; then
+    echo "      Your hook runs the audit without --staged; re-run with --force to install the current hook."
+  fi
+else
+  echo "  [-] Not a git repository; pre-commit hook not installed (run 'git init' and re-run)."
+fi
+
+# 4. Index existing source files into .eden/REGISTRY.md
+PY=""
+if command -v python3 >/dev/null 2>&1; then PY=python3; elif command -v python >/dev/null 2>&1; then PY=python; fi
+if [ -n "$PY" ]; then
+  "$PY" scripts/eden-index.py .
+else
+  echo "  [-] Python 3 not found; skipped indexing. Install Python 3 to use the audit."
+fi
+
+echo "Done. Next: fill in the Commands section of AGENTS.md and .eden/ARCHITECTURE.md, then run:"
+echo "  python3 scripts/eden-audit.py"
+if [ "$BACKUPS" -eq 1 ]; then
+  echo "Review and delete the *.eden-bak backups before committing."
+fi
+if [ "$SKIPPED" -eq 1 ]; then
+  echo "Some files already existed and were left unchanged (see [~] above). Use --force to replace them."
+fi

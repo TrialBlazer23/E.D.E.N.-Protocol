@@ -1,28 +1,42 @@
-# E.D.E.N. PROTOCOL: AGENT OPERATING SYSTEM
+# AGENTS.md - E.D.E.N. Protocol
 
-You are operating inside an E.D.E.N. governed repository. You must adhere strictly to the Law of Necessity: local sovereignty, zero bloat, and strict hardware efficiency.
+This repository uses the E.D.E.N. Protocol. `.eden/` holds project state; `scripts/eden-audit.py` checks it. These rules apply to every agent and human working here.
 
-## MANDATORY EXECUTION LOOP
-Do NOT write or modify code until you have completed Phase 1 and Phase 2.
+## Commands
+Fill these in for this project and keep them current.
+- Setup: `<fill in>`
+- Build: `<fill in, or "none">`
+- Test: `<fill in>`
+- Lint: `<fill in, or "none">`
+- Verify: `python3 scripts/eden-audit.py --verify` (runs `.eden/verify` or `.eden/verify.py` when present; put test and lint there)
 
-### Phase 1: E — Evaluate (Pre-Flight Check)
-1. Read `.eden/ARCHITECTURE.md` to understand hardware/memory constraints.
-2. Read `.eden/REGISTRY.md` to see ALL existing utilities, models, and modules.
-3. Read `.eden/LEARNINGS.md` to avoid repeating past architectural mistakes.
-4. Review the recent entries in `.eden/CHANGELOG_AGENT.jsonl`.
+## Pick a lane first
+- **Read-only** (questions, reviews): read what you need and answer. Change nothing; skip Normalize.
+- **Trivial** (typo, comment, formatting, docs-only): make the change and run the audit. No plan or registry update.
+- **Normal** (code change inside the existing design): run the full loop.
+- **Architectural** (new module boundary, new dependency, schema or data change, deleting a component, touching an invariant in `.eden/ARCHITECTURE.md`): Evaluate and Define, write the plan into `.eden/PLAN.md`, then stop and wait for human approval before Execute.
 
-### Phase 2: D — Define (Anti-Duplication Gate)
-1. Check `.eden/PLAN.md` for the current active task.
-2. **ANTI-DUPLICATION LAW:** Before creating any new function, class, helper, or installing a package, search `.eden/REGISTRY.md`. If a similar component exists, you MUST import or extend it. Never build parallel implementations.
-3. State your proposed file changes and which existing registry modules you will reuse before writing code.
+## The loop
+1. **Evaluate** - Read `.eden/ARCHITECTURE.md`, `.eden/REGISTRY.md`, `.eden/LEARNINGS.md`, and the last 10 lines of `.eden/CHANGELOG_AGENT.jsonl`.
+2. **Define** - Check `.eden/PLAN.md`. Search the registry before adding a helper, class, or package; reuse or extend what exists. Name the files you will touch.
+3. **Execute** - Make the smallest change that meets the acceptance criteria. Prefer the standard library.
+4. **Normalize** - Register new or changed source files in `.eden/REGISTRY.md` (`python3 scripts/eden-index.py .` helps). Append one JSON line to `.eden/CHANGELOG_AGENT.jsonl` whose `files` lists every changed source file. Add verified root causes to `.eden/LEARNINGS.md`. Update `.eden/PLAN.md`.
 
-### Phase 3: E — Execute (Lean Implementation)
-1. Write modular, single-responsibility code with minimal external dependencies.
-2. Respect the target hardware ceiling (e.g., 4GB RAM limit, edge execution). Avoid heavy abstractions when standard library primitives suffice.
+## If the request conflicts with PLAN.md
+The human's current request wins. If it contradicts an acceptance criterion or invariant, say so before starting, then update `.eden/PLAN.md` to match what was done.
 
-### Phase 4: N — Normalize (Mandatory Post-Flight State Update)
-Your task is **INCOMPLETE** until you update the repository state:
-1. **Update `.eden/REGISTRY.md`:** If you created a new file, class, or shared function, register its path, purpose, and signature.
-2. **Append to `.eden/CHANGELOG_AGENT.jsonl`:** Log a single-line JSON entry of what changed and why.
-3. **Update `.eden/LEARNINGS.md`:** If you hit an environment quirk, port conflict, or tricky bug, document the root cause and fix.
-4. Run `python scripts/eden-audit.py` (or the equivalent interpreter command for the project) and resolve all reported errors.
+## Done means
+1. Tests and `.eden/verify` pass, or you report exactly what fails and why.
+2. `python3 scripts/eden-audit.py --verify` exits 0.
+3. The acceptance criteria are met.
+
+## Stop and escalate
+After 3 rounds of audit or test fixes that still fail, stop and report the remaining errors. Ask when requirements are ambiguous.
+
+## Never
+- Commit or print secrets, tokens, or credentials.
+- Force-push, rewrite published history, or skip hooks with `--no-verify`.
+- Delete user data, untracked files, or branches you did not create.
+- Edit or remove existing changelog lines (append only).
+- Add a `BANNED:` dependency, or any new dependency outside the Architectural lane.
+- Write guesses into LEARNINGS.md.
