@@ -22,6 +22,10 @@ Fill these in for this project and keep them current.
 3. **Execute** - Make the smallest change that meets the acceptance criteria. Prefer the standard library.
 4. **Normalize** - Register new or changed source files in `.eden/REGISTRY.md` (`python3 scripts/eden-index.py .` helps). Append one JSON line to `.eden/CHANGELOG_AGENT.jsonl` whose `files` lists every changed source file. Add verified root causes to `.eden/LEARNINGS.md`. Update `.eden/PLAN.md`.
 
+## Skills and stop hook
+- Shared skills live in `.agents/skills/`: `eden-normalize` (finish a change), `eden-architect` (plan an Architectural change), `eden-adopt` (first pass on an existing project).
+- When you end a turn with changed source files, the stop hook (`scripts/eden-hook.py`) runs the audit. If it reports errors, fix them; it forces at most 2 extra rounds, then you report what still fails.
+
 ## If the request conflicts with PLAN.md
 The human's current request wins. If it contradicts an acceptance criterion or invariant, say so before starting, then update `.eden/PLAN.md` to match what was done.
 

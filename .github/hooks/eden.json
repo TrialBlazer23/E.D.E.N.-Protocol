@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "python3 scripts/eden-hook.py --tool copilot || python scripts/eden-hook.py --tool copilot",
+        "powershell": "$in = [Console]::In.ReadToEnd(); foreach ($c in @('python3', 'python', 'py')) { $a = @(); if ($c -eq 'py') { $a = @('-3') }; if (Get-Command $c -ErrorAction SilentlyContinue) { & $c @a -c 'import sys' 2>$null; if ($LASTEXITCODE -eq 0) { $in | & $c @a scripts/eden-hook.py --tool copilot; exit 0 } } }; '{}'",
+        "cwd": ".",
+        "timeoutSec": 120
+      }
+    ]
+  }
+}

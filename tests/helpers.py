@@ -10,8 +10,8 @@ from pathlib import Path
 PROTOCOL_ROOT = Path(__file__).resolve().parent.parent
 
 
-def run(cmd, cwd, check=True):
-    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=check)
+def run(cmd, cwd, check=True, input=None, env=None):
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=check, input=input, env=env)
 
 
 def make_repo() -> Path:
