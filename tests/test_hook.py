@@ -49,6 +49,17 @@ class HookTests(unittest.TestCase):
             self.assertTrue(is_block(tool, reply), f"{tool}: {reply}")
             self.assertIn("app.py", json.dumps(reply))
 
+    def test_multi_root_audits_the_root_that_changed(self):
+        other = init_repo()
+        try:
+            (other / "app.py").write_text("x = 1\n", encoding="utf-8")
+            payload = dict(PAYLOADS["cursor"], workspace_roots=[str(self.repo), str(other)])
+            reply = self.hook(payload)
+            self.assertTrue(is_block("cursor", reply), reply)
+            self.assertIn("app.py", json.dumps(reply))
+        finally:
+            cleanup(other)
+
     def test_round_cap(self):
         (self.repo / "app.py").write_text("x = 1\n", encoding="utf-8")
         first = dict(PAYLOADS["grok"])

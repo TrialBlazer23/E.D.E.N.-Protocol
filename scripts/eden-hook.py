@@ -108,7 +108,12 @@ def block(tool: str, reason: str) -> dict:
 # ------------------------------------------------------------------------------
 # Repository, state, and audit
 # ------------------------------------------------------------------------------
-def find_root(payload: dict) -> Path | None:
+def find_roots(payload: dict) -> list[Path]:
+    """Every distinct E.D.E.N.-initialized root reachable from the payload, in priority order.
+
+    Multi-root workspaces (Cursor's ``workspace_roots``) can hold several initialized repos;
+    the stop hook must audit each one that changed, not just the first it finds.
+    """
     candidates: list[str] = []
     for key in ("workspace_roots", "workspacePaths"):
         val = payload.get(key)
@@ -122,12 +127,23 @@ def find_root(payload: dict) -> Path | None:
             candidates.append(os.environ[key])
     candidates.append(os.getcwd())
     candidates.append(str(Path(__file__).resolve().parent.parent))
+    roots: list[Path] = []
+    seen: set[Path] = set()
     for cand in candidates:
         path = Path(os.path.expanduser(cand))
         for p in (path, *path.parents):
             if (p / ".eden").is_dir() and (p / "scripts" / "eden-audit.py").is_file():
-                return p
-    return None
+                key = p.resolve()
+                if key not in seen:
+                    seen.add(key)
+                    roots.append(p)
+                break
+    return roots
+
+
+def find_root(payload: dict) -> Path | None:
+    roots = find_roots(payload)
+    return roots[0] if roots else None
 
 
 def state_path(root: Path) -> Path:
@@ -208,31 +224,34 @@ def decide(payload: dict, tool_hint: str | None = None) -> tuple[str | None, dic
         return tool, allow(tool)
     if not is_real_stop(tool, payload):
         return tool, allow(tool)
-    root = find_root(payload)
-    if root is None:
+    roots = find_roots(payload)
+    if not roots:
         return tool, allow(tool)
 
-    spath = state_path(root)
+    spath = state_path(roots[0])  # one round budget per session, kept in the primary root
     state = load_state(spath)
     key = session_key(tool, payload)
     rounds = int(state.get(key, {}).get("rounds", 0))
     if continuing(tool, payload) is False:
         rounds = 0  # a new user turn starts a fresh budget
 
-    changed = changed_source_files(root)
-    if changed == [] and os.environ.get("EDEN_HOOK_VERIFY") != "1":
-        state.pop(key, None)
-        save_state(spath, state)
-        return tool, allow(tool)
-
-    ok, output = run_audit(root)
-    if ok or rounds >= MAX_FORCED_ROUNDS:
+    verify = os.environ.get("EDEN_HOOK_VERIFY") == "1"
+    failures: list[str] = []
+    for root in roots:
+        if changed_source_files(root) == [] and not verify:
+            continue
+        ok, output = run_audit(root)
         if not ok:
+            failures.append(output if len(roots) == 1 else f"[{root}]\n{output}")
+
+    if not failures or rounds >= MAX_FORCED_ROUNDS:
+        if failures:
             print("[EDEN-HOOK] audit still failing after the automatic rounds; letting the agent stop "
                   "so it can report.", file=sys.stderr)
         state.pop(key, None)
         save_state(spath, state)
         return tool, allow(tool)
+    output = "\n\n".join(failures)
 
     rounds += 1
     state[key] = {"rounds": rounds, "t": time.time()}
