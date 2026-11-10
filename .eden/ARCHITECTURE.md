@@ -9,7 +9,7 @@ This repository is the protocol itself: agent instruction files, `.eden/` templa
 
 ## Constraints & Limits
 - Memory / performance ceiling: none known; tools must stay fast enough for a pre-commit hook.
-- Network, ports, and external services: none. `EDEN_RAW_BASE` downloads are opt-in.
+- Network, ports, and external services: none by default. `EDEN_RAW_BASE` downloads are opt-in and execute the downloaded installer; optional `EDEN_SHA256` verifies `scripts/eden-install.py` or a checksums file first.
 
 ## Core Data Flow
 ```text

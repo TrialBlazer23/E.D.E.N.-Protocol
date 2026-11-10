@@ -3,7 +3,7 @@
 # E.D.E.N. Protocol bootstrapper (POSIX shell). Needs Python 3.
 #
 # Usage:
-#   /path/to/E.D.E.N-Protocol/init-eden.sh [--new | --adopt] [--tools LIST] [--legacy]
+#   /path/to/E.D.E.N.-Protocol/init-eden.sh [--new | --adopt] [--tools LIST] [--legacy]
 #       [--force] [--detect | --no-detect] [--reindex] [--name NAME] [--source DIR] [TARGET_DIR]
 #
 #   TARGET_DIR   repository to initialize (default: current directory)
@@ -23,8 +23,10 @@
 #   --source     protocol checkout to copy from (default: the folder holding this script)
 #   --name       project name used in .eden/ARCHITECTURE.md (default: target folder name)
 #
-#   EDEN_RAW_BASE=https://raw.githubusercontent.com/<owner>/E.D.E.N-Protocol/main
+#   EDEN_RAW_BASE=https://raw.githubusercontent.com/<owner>/E.D.E.N.-Protocol/<commit>
 #                download the protocol files from this URL when --source has none.
+#   EDEN_SHA256  optional: 64-hex SHA-256 of scripts/eden-install.py, or a path to a
+#                sha256sum-format file. A mismatch aborts before the installer runs.
 #
 # Re-running is safe. The work is done by scripts/eden-install.py.
 # ==============================================================================
@@ -40,7 +42,7 @@ while [ $# -gt 0 ]; do
     --tools|--name) ARGS+=("$1" "${2:?$1 needs a value}"); shift ;;
     --tools=*|--name=*) ARGS+=("$1") ;;
     --source) SOURCE_DIR="$(cd "${2:?--source needs a value}" && pwd)"; shift ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     -*) echo "Unknown option: $1" >&2; exit 2 ;;
     *) TARGET_DIR="$1" ;;
   esac
@@ -77,6 +79,51 @@ if [ ! -f "$SOURCE_DIR/scripts/eden-install.py" ] || [ ! -f "$SOURCE_DIR/templat
     fi
   done
   SOURCE_DIR="$TMP_SRC"
+fi
+
+eden_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$1"
+  fi
+}
+
+# Optional integrity check (no-op unless EDEN_SHA256 is set).
+if [ -n "${EDEN_SHA256:-}" ]; then
+  if [ -f "${EDEN_SHA256}" ]; then
+    while read -r expected rel rest; do
+      case "$expected" in ""|\#*) continue ;; esac
+      rel="${rel#\*}"
+      if [ -z "$rel" ]; then
+        echo "ERROR: EDEN_SHA256 checksums file has a line without a path." >&2
+        exit 1
+      fi
+      actual="$(eden_sha256 "$SOURCE_DIR/$rel")"
+      expected_lc="$(printf '%s' "$expected" | tr 'A-F' 'a-f')"
+      actual_lc="$(printf '%s' "$actual" | tr 'A-F' 'a-f')"
+      if [ "$actual_lc" != "$expected_lc" ]; then
+        echo "ERROR: sha256 mismatch for $rel (EDEN_SHA256 checksums file)." >&2
+        exit 1
+      fi
+    done < "${EDEN_SHA256}"
+    echo "EDEN_SHA256: checksums file verified."
+  elif printf '%s' "$EDEN_SHA256" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
+    actual="$(eden_sha256 "$SOURCE_DIR/scripts/eden-install.py")"
+    expected_lc="$(printf '%s' "$EDEN_SHA256" | tr 'A-F' 'a-f')"
+    actual_lc="$(printf '%s' "$actual" | tr 'A-F' 'a-f')"
+    if [ "$actual_lc" != "$expected_lc" ]; then
+      echo "ERROR: sha256 mismatch for scripts/eden-install.py." >&2
+      exit 1
+    fi
+    echo "EDEN_SHA256: scripts/eden-install.py verified."
+  else
+    echo "ERROR: EDEN_SHA256 must be a 64-digit hex digest of scripts/eden-install.py" >&2
+    echo "       or a path to a sha256sum-format file." >&2
+    exit 1
+  fi
 fi
 
 if [ "$SOURCE_DIR" = "$TARGET_DIR" ]; then

@@ -16,6 +16,8 @@
 
     GNU-style options (--adopt, --tools cursor,grok, ...) are accepted too.
     This file is intentionally ASCII-only so Windows PowerShell 5.1 reads it correctly.
+    EDEN_RAW_BASE downloads are a trust boundary; set EDEN_SHA256 to verify
+    scripts/eden-install.py (64 hex digits) or a sha256sum-format file.
 
 .PARAMETER TargetDir
     Repository to initialize. Defaults to the current directory.
@@ -39,8 +41,8 @@
     Name used in .eden/ARCHITECTURE.md. Defaults to the target folder name.
 
 .EXAMPLE
-    C:\src\E.D.E.N-Protocol\init-eden.ps1                      # run from inside your repo
-    C:\src\E.D.E.N-Protocol\init-eden.ps1 C:\src\app -Adopt -Tools cursor,vscode
+    C:\src\E.D.E.N.-Protocol\init-eden.ps1                      # run from inside your repo
+    C:\src\E.D.E.N.-Protocol\init-eden.ps1 C:\src\app -Adopt -Tools cursor,vscode
 #>
 param(
     [Parameter(Position = 0)][string]$TargetDir = (Get-Location).Path,
@@ -117,6 +119,41 @@ if (-not $SourceDir -or -not (Test-Path (Join-Path $SourceDir "scripts/eden-inst
     $SourceDir = $TempSource
 }
 $SourceDir = (Resolve-Path $SourceDir).Path
+
+# Optional integrity check (no-op unless EDEN_SHA256 is set).
+if ($env:EDEN_SHA256) {
+    function Get-EdenSha256([string]$FilePath) {
+        return (Get-FileHash -Algorithm SHA256 -Path $FilePath).Hash.ToLowerInvariant()
+    }
+    $spec = $env:EDEN_SHA256
+    if (Test-Path -LiteralPath $spec -PathType Leaf) {
+        Get-Content -LiteralPath $spec | ForEach-Object {
+            $line = $_.Trim()
+            if (-not $line -or $line.StartsWith("#")) { return }
+            $parts = $line -split '\s+', 2
+            if ($parts.Count -lt 2) {
+                Write-Error "EDEN_SHA256 checksums file has a line without a path."
+            }
+            $rel = $parts[1].Trim().TrimStart([char]'*')
+            $actual = Get-EdenSha256 (Join-Path $SourceDir $rel)
+            if ($actual -ne $parts[0].ToLowerInvariant()) {
+                Write-Error "sha256 mismatch for $rel (EDEN_SHA256 checksums file)."
+            }
+        }
+        Write-Host "EDEN_SHA256: checksums file verified."
+    }
+    elseif ($spec -match '^[0-9A-Fa-f]{64}$') {
+        $actual = Get-EdenSha256 (Join-Path $SourceDir "scripts/eden-install.py")
+        if ($actual -ne $spec.ToLowerInvariant()) {
+            Write-Error "sha256 mismatch for scripts/eden-install.py."
+        }
+        Write-Host "EDEN_SHA256: scripts/eden-install.py verified."
+    }
+    else {
+        Write-Error ("EDEN_SHA256 must be a 64-digit hex digest of scripts/eden-install.py " +
+            "or a path to a sha256sum-format file.")
+    }
+}
 
 if ($SourceDir -eq $TargetDir) {
     Write-Error "Target is the protocol repo itself. Run this from (or point it at) the repo you want to initialize."
