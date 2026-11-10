@@ -29,14 +29,14 @@ Clone the protocol repository somewhere outside your project, then run its boots
 
 **Linux / macOS / Termux / Git Bash:**
 ```bash
-/path/to/E.D.E.N-Protocol/init-eden.sh --adopt            # current directory
-/path/to/E.D.E.N-Protocol/init-eden.sh --adopt ~/src/app  # explicit target
+/path/to/E.D.E.N.-Protocol/init-eden.sh --adopt            # current directory
+/path/to/E.D.E.N.-Protocol/init-eden.sh --adopt ~/src/app  # explicit target
 ```
 
 **Windows PowerShell:**
 ```powershell
-C:\src\E.D.E.N-Protocol\init-eden.ps1 -Adopt             # current directory
-C:\src\E.D.E.N-Protocol\init-eden.ps1 -Adopt C:\src\app
+C:\src\E.D.E.N.-Protocol\init-eden.ps1 -Adopt             # current directory
+C:\src\E.D.E.N.-Protocol\init-eden.ps1 -Adopt C:\src\app
 ```
 
 Adopt mode:

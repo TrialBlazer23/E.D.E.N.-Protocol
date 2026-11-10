@@ -1,5 +1,7 @@
 """Smoke tests for init-eden.sh and the single-source-of-truth rule."""
 
+import hashlib
+import os
 import shutil
 import unittest
 
@@ -17,8 +19,8 @@ class InitTests(unittest.TestCase):
     def tearDown(self):
         cleanup(self.repo)
 
-    def init(self, *args):
-        return run(["bash", str(PROTOCOL_ROOT / "init-eden.sh"), *args], self.repo)
+    def init(self, *args, env=None):
+        return run(["bash", str(PROTOCOL_ROOT / "init-eden.sh"), *args], self.repo, env=env)
 
     def test_fresh_repo_can_commit(self):
         self.init()
@@ -68,6 +70,37 @@ class InitTests(unittest.TestCase):
         plan.write_text("# PLAN\nmine\n", encoding="utf-8")
         self.init("--force")
         self.assertEqual(plan.read_text(encoding="utf-8"), "# PLAN\nmine\n")
+
+    def test_sha256_mismatch_aborts(self):
+        env = dict(os.environ)
+        env["EDEN_SHA256"] = "0" * 64
+        res = run(["bash", str(PROTOCOL_ROOT / "init-eden.sh"), str(self.repo)],
+                  self.repo, check=False, env=env)
+        self.assertNotEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertIn("sha256 mismatch", (res.stdout + res.stderr).lower())
+        self.assertFalse((self.repo / "scripts/eden-audit.py").exists())
+
+    def test_sha256_match_allows_init(self):
+        digest = hashlib.sha256(
+            (PROTOCOL_ROOT / "scripts/eden-install.py").read_bytes()).hexdigest()
+        env = dict(os.environ)
+        env["EDEN_SHA256"] = digest
+        res = run(["bash", str(PROTOCOL_ROOT / "init-eden.sh"), str(self.repo)],
+                  self.repo, check=False, env=env)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertTrue((self.repo / "scripts/eden-audit.py").is_file())
+
+    def test_sha256_checksums_file(self):
+        digest = hashlib.sha256(
+            (PROTOCOL_ROOT / "scripts/eden-install.py").read_bytes()).hexdigest()
+        sums = self.repo / "checksums.txt"
+        sums.write_text(f"{digest}  scripts/eden-install.py\n", encoding="utf-8")
+        env = dict(os.environ)
+        env["EDEN_SHA256"] = str(sums)
+        res = run(["bash", str(PROTOCOL_ROOT / "init-eden.sh"), str(self.repo)],
+                  self.repo, check=False, env=env)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertTrue((self.repo / "scripts/eden-audit.py").is_file())
 
 
 class EncodingTests(unittest.TestCase):

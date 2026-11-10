@@ -181,5 +181,7 @@ echo '{"hookEventName":"Stop","stopHookActive":false,"sessionId":"t","reason":"e
 | `--reindex` / `-Reindex` | Regenerate section 2 of an existing registry. |
 | `--name NAME` / `-ProjectName NAME` | Project name for `.eden/ARCHITECTURE.md`. |
 | `--source DIR` / `-SourceDir DIR` | Protocol checkout to copy from (or set `EDEN_RAW_BASE`). |
+| `EDEN_RAW_BASE` (env) | Raw-file URL used only when `--source` has no protocol files. This is a trust boundary; pin to a commit. See [SECURITY.md](../SECURITY.md). |
+| `EDEN_SHA256` (env) | Optional. 64-hex SHA-256 of `scripts/eden-install.py`, or a path to a `sha256sum`-format file. A mismatch aborts before the installer runs. |
 
 The installer is idempotent: a second run with the same options changes nothing and adds no changelog line. The first changelog line (`TASK-00` for new, `EDEN-ADOPT` for adopt) lists exactly the files the run wrote or merged; later runs that change something append an `EDEN-SETUP` line.

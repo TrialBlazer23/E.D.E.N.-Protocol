@@ -1,3 +1,22 @@
 __pycache__/
 *.py[cod]
 *.eden-bak
+
+# Secrets and local env (keep a committed example if you add one)
+.env
+.env.*
+!.env.example
+
+# Virtual environments
+.venv/
+venv/
+
+# OS and editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# Common adopter artifacts (this file is not copied into target projects)
+node_modules/
