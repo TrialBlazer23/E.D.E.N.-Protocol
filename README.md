@@ -114,15 +114,15 @@ Re-running is safe: up-to-date files are left alone, the EDEN block is updated i
 
 **Linux / macOS / Termux / WSL / Git Bash:**
 ```bash
-/path/to/E.D.E.N-Protocol/init-eden.sh [--new|--adopt] [--tools antigravity,cursor,grok,vscode] [--legacy] [--force] [TARGET_DIR]
+/path/to/E.D.E.N.-Protocol/init-eden.sh [--new|--adopt] [--tools antigravity,cursor,grok,vscode] [--legacy] [--force] [TARGET_DIR]
 ```
 
 **Windows PowerShell** (GNU-style `--adopt` options work too):
 ```powershell
-C:\path\to\E.D.E.N-Protocol\init-eden.ps1 [-New|-Adopt] [-Tools cursor,vscode] [-Legacy] [-Force] [TargetDir]
+C:\path\to\E.D.E.N.-Protocol\init-eden.ps1 [-New|-Adopt] [-Tools cursor,vscode] [-Legacy] [-Force] [TargetDir]
 ```
 
-Both need Python 3 (found as `python3`, `python`, or `py -3`). `--tools` defaults to all four of `antigravity,cursor,grok,vscode`; add `claude` for a `CLAUDE.md`. If you use husky, lefthook, or pre-commit, the git hook is not installed; add `python3 scripts/eden-audit.py --staged` to that tool's pre-commit step. Set `EDEN_RAW_BASE` to a raw-file URL of this repository to download the files instead of using a local clone.
+Both need **Python 3.9+** (found as `python3`, `python`, or `py -3`). The scripts and tests use the standard library only; no packages or virtual environment are required. `--tools` defaults to all four of `antigravity,cursor,grok,vscode`; add `claude` for a `CLAUDE.md`. If you use husky, lefthook, or pre-commit, the git hook is not installed; add `python3 scripts/eden-audit.py --staged` to that tool's pre-commit step. Set `EDEN_RAW_BASE` to a raw-file URL of this repository to download the files instead of using a local clone. That URL is a trust boundary: the wrappers download files and then run `scripts/eden-install.py` from them. Pin the URL to a specific commit when you can, and optionally set `EDEN_SHA256` to the SHA-256 of `scripts/eden-install.py` (64 hex digits) or to a `sha256sum`-format file so a mismatch aborts before the installer runs. See [SECURITY.md](SECURITY.md).
 
 Afterwards, `python3 scripts/eden-audit.py --doctor` shows what each tool will load and what is still unfinished.
 
@@ -154,11 +154,14 @@ python3 -m unittest discover -s tests          # or: python3 scripts/eden-audit.
 
 * [**Protocol Specification**](docs/SPECIFICATION.md) — Complete specification of the `.eden/` control plane, JSONL schemas, and lifecycle rules.
 * [**Multi-Agent Routing**](docs/MULTI_AGENT_ROUTING.md) — Which files and hooks each tool (Antigravity, Cursor, Grok Build, VS Code/Copilot) loads, and how pointer files avoid drift.
-* [**CLI & Compliance Auditing**](docs/CLI_AND_AUDITING.md) — Reference for `eden-audit.py`, `eden-index.py`, `eden-hook.py`, Git hooks, and CI/CD integration.
+* [**CLI & Compliance Auditing**](docs/CLI_AND_AUDITING.md) — Reference for `eden-audit.py`, `eden-index.py`, `eden-hook.py`, Git hooks, and CI/CD integration (includes a ready-to-copy Actions workflow).
 * [**Migration & Retrofit Guide**](docs/MIGRATION_GUIDE.md) — Adopting E.D.E.N. in an existing codebase with `--adopt` and merge markers.
+* [**Contributing**](CONTRIBUTING.md) — How to run tests and what a pull request should include.
+* [**Security policy**](SECURITY.md) — Private vulnerability reporting and the `EDEN_RAW_BASE` trust model.
+* [**Changelog**](CHANGELOG.md) — Notable changes by version.
 
 ---
 
 ## 7. License
 
-Licensed under the MIT License. Built with sovereign discipline by **Necessity Labs**.
+Licensed under the [MIT License](LICENSE). Built with sovereign discipline by **Necessity Labs**.
