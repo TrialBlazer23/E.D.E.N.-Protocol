@@ -1,0 +1,23 @@
+name: E.D.E.N. Compliance Audit
+on: [push, pull_request]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # --base needs the base branch history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run E.D.E.N. Audit
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="${{ github.event.before }}"
+            # New branch pushes have no "before" commit; compare with the default branch.
+            case "$BASE" in 0000000*|"") BASE="origin/${{ github.event.repository.default_branch }}" ;; esac
+          fi
+          python scripts/eden-audit.py --base "$BASE" --verify
