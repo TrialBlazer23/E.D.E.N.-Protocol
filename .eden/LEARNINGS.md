@@ -13,3 +13,5 @@ Format (one line per entry):
 - [2026-10-30] Audit: files inside a new folder were not seen -> `git status --porcelain` collapses untracked dirs to `?? dir/` -> use `--untracked-files=all`.
 - [2026-10-30] Audit: CI always passed -> a clean checkout has no working-tree changes -> CI must use `--base <ref>` with full history (`fetch-depth: 0`).
 - [2026-11-10] AGENTS.md Commands: filling this repo's `<fill in>` placeholders with protocol-specific commands would ship those values to every `--new` install and stop `--detect` from replacing them -> `AGENTS.md` is copied or merged as the template and `fill_commands` only matches `<fill in...>` -> keep the placeholders here; document this repo's commands in CONTRIBUTING.md and the README.
+- [2026-11-10] Bootstrap checksums: init-eden.sh failed on CRLF checksum files -> bash read preserves \r on the last token on Windows -> strip \r from rel and expected.
+- [2026-11-10] PowerShell 5.1 param: $PSScriptRoot inside param() is empty when invoked via -File -> default parameter assignment evaluates before $PSScriptRoot is bound -> assign $SourceDir = "" in param and resolve $PSScriptRoot in script body.

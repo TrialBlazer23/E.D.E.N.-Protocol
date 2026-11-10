@@ -97,6 +97,8 @@ if [ -n "${EDEN_SHA256:-}" ]; then
     while read -r expected rel rest; do
       case "$expected" in ""|\#*) continue ;; esac
       rel="${rel#\*}"
+      rel="${rel%$'\r'}"
+      expected="${expected%$'\r'}"
       if [ -z "$rel" ]; then
         echo "ERROR: EDEN_SHA256 checksums file has a line without a path." >&2
         exit 1

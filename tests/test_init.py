@@ -52,7 +52,11 @@ class InitTests(unittest.TestCase):
         other = make_repo()
         try:
             self.init()
-            run([pwsh, "-NoProfile", "-File", str(PROTOCOL_ROOT / "init-eden.ps1"), str(other)], other)
+            cmd = [pwsh, "-NoProfile"]
+            if "powershell" in pwsh.lower():
+                cmd += ["-ExecutionPolicy", "Bypass"]
+            cmd += ["-File", str(PROTOCOL_ROOT / "init-eden.ps1"), str(other)]
+            run(cmd, other)
             for rel in ["AGENTS.md", ".cursor/hooks.json", ".agents/hooks.json"] + DEFAULT_POINTERS:
                 self.assertEqual((other / rel).read_bytes(), (self.repo / rel).read_bytes(), rel)
         finally:
@@ -99,6 +103,55 @@ class InitTests(unittest.TestCase):
         env["EDEN_SHA256"] = str(sums)
         res = run(["bash", str(PROTOCOL_ROOT / "init-eden.sh"), str(self.repo)],
                   self.repo, check=False, env=env)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertTrue((self.repo / "scripts/eden-audit.py").is_file())
+
+    def test_sha256_ps1_mismatch_aborts(self):
+        pwsh = shutil.which("pwsh") or shutil.which("powershell")
+        if not pwsh:
+            self.skipTest("PowerShell not installed")
+        env = dict(os.environ)
+        env["EDEN_SHA256"] = "0" * 64
+        cmd = [pwsh, "-NoProfile"]
+        if "powershell" in pwsh.lower():
+            cmd += ["-ExecutionPolicy", "Bypass"]
+        cmd += ["-File", str(PROTOCOL_ROOT / "init-eden.ps1"), str(self.repo)]
+        res = run(cmd, self.repo, check=False, env=env)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("sha256 mismatch", (res.stdout + res.stderr).lower())
+        self.assertFalse((self.repo / "scripts/eden-audit.py").exists())
+
+    def test_sha256_ps1_match_allows_init(self):
+        pwsh = shutil.which("pwsh") or shutil.which("powershell")
+        if not pwsh:
+            self.skipTest("PowerShell not installed")
+        digest = hashlib.sha256(
+            (PROTOCOL_ROOT / "scripts/eden-install.py").read_bytes()).hexdigest()
+        env = dict(os.environ)
+        env["EDEN_SHA256"] = digest
+        cmd = [pwsh, "-NoProfile"]
+        if "powershell" in pwsh.lower():
+            cmd += ["-ExecutionPolicy", "Bypass"]
+        cmd += ["-File", str(PROTOCOL_ROOT / "init-eden.ps1"), str(self.repo)]
+        res = run(cmd, self.repo, check=False, env=env)
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+        self.assertTrue((self.repo / "scripts/eden-audit.py").is_file())
+
+    def test_sha256_ps1_checksums_file(self):
+        pwsh = shutil.which("pwsh") or shutil.which("powershell")
+        if not pwsh:
+            self.skipTest("PowerShell not installed")
+        digest = hashlib.sha256(
+            (PROTOCOL_ROOT / "scripts/eden-install.py").read_bytes()).hexdigest()
+        sums = self.repo / "checksums.txt"
+        sums.write_text(f"{digest}  scripts/eden-install.py\n", encoding="utf-8")
+        env = dict(os.environ)
+        env["EDEN_SHA256"] = str(sums)
+        cmd = [pwsh, "-NoProfile"]
+        if "powershell" in pwsh.lower():
+            cmd += ["-ExecutionPolicy", "Bypass"]
+        cmd += ["-File", str(PROTOCOL_ROOT / "init-eden.ps1"), str(self.repo)]
+        res = run(cmd, self.repo, check=False, env=env)
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
         self.assertTrue((self.repo / "scripts/eden-audit.py").is_file())
 

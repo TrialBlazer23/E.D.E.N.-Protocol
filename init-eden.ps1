@@ -54,12 +54,15 @@ param(
     [switch]$Detect,
     [switch]$NoDetect,
     [switch]$Reindex,
-    [string]$SourceDir = $PSScriptRoot,
+    [string]$SourceDir = "",
     [string]$ProjectName = "",
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $SourceDir) {
+    $SourceDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
+}
 
 # Files the installer reads from the protocol checkout (keep in sync with scripts/eden-install.py).
 $SourceFiles = @(

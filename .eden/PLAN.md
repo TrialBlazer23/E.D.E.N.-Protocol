@@ -1,8 +1,8 @@
 # PLAN
 
 ## Current Objective
-- [x] **TASK-06:** Dogfood CI workflow: copy the workflow in `docs/CLI_AND_AUDITING.md` section 4.2 to `.github/workflows/eden-audit.yml`.
-  - Acceptance: `.github/workflows/eden-audit.yml` matches `docs/CLI_AND_AUDITING.md` section 4.2; `python3 scripts/eden-audit.py` exits 0.
+- [x] **TASK-07:** Verify and harden optional `EDEN_SHA256` integrity check: CRLF carriage return stripping for `init-eden.sh` checksum files, PowerShell 5.1 `$SourceDir` `$PSScriptRoot` resolution for `init-eden.ps1`, comprehensive test coverage for match, mismatch, and checksum file across both bash and PowerShell wrappers.
+  - Acceptance: `python3 scripts/eden-audit.py --verify` passes; `init-eden.sh` and `init-eden.ps1` refuse mismatched digests and accept valid SHA-256 strings or checksums files.
 
 ## Backlog
 - [ ] Folder-level registry depth (register directories, not only files) and registry intent preserved on reindex.
@@ -11,6 +11,7 @@
 - [ ] Confirm the stop hook on real Windows installs (PowerShell 5.1 `||`, `py -3`) and on each tool's current release.
 
 ## Completed
+- [x] **TASK-06:** Dogfood CI workflow: copy the workflow in `docs/CLI_AND_AUDITING.md` section 4.2 to `.github/workflows/eden-audit.yml`.
 - [x] **TASK-05:** Public-readiness docs and bootstrap hardening: MIT LICENSE, SECURITY.md, CONTRIBUTING.md, CHANGELOG.md, expanded `.gitignore`, `E.D.E.N.-Protocol` path typo, README Python 3.9+ and community links, optional `EDEN_SHA256` on the init wrappers.
 - [x] **TASK-04:** Tool wiring and safe adoption (`--new`/`--adopt`, merge markers, stop hook, skills, command detection, `--doctor`, tests).
 - [x] **TASK-03:** Review recommendations 1-5 (working setup, audit blind spots, correctness in the loop, AGENTS.md decision rules, encoding and placeholder facts).
