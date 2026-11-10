@@ -13,6 +13,7 @@ Modes:
   (default)      working tree vs HEAD, including untracked files in new directories
   --staged       index vs HEAD (used by the pre-commit hook)
   --base REF     REF...HEAD (used by CI on a clean checkout)
+  --doctor       report what each agent tool will load and what is still unfinished
 """
 
 from __future__ import annotations
@@ -25,29 +26,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Safe output for Windows consoles (cp1252/ascii). Status markers are ASCII anyway.
-if hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from eden_common import (PLACEHOLDER_RE, configure_stdio, is_protocol_repo, is_source_file,  # noqa: E402
+                         parse_porcelain_z)
 
-CODE_EXTENSIONS = {
-    ".py", ".kt", ".kts", ".java", ".js", ".ts", ".tsx",
-    ".sh", ".ps1", ".rs", ".c", ".cpp", ".h", ".go"
-}
-IGNORED_DIRS = {
-    ".git", ".eden", ".venv", "venv", "node_modules",
-    "build", "dist", "__pycache__", ".gradle", ".idea", "docs",
-    "third_party", "test", "androidTest", ".cxx", "schemas"
-}
-EXEMPT_FILES = {
-    "scripts/eden-audit.py",
-    "scripts/eden-index.py",
-    "init-eden.sh",
-    "init-eden.ps1",
-}
+configure_stdio()
+
 REGISTRY_REL = ".eden/REGISTRY.md"
 CHANGELOG_REL = ".eden/CHANGELOG_AGENT.jsonl"
 REQUIRED_KEYS = {"timestamp", "phase", "action", "files", "summary"}
@@ -121,30 +105,6 @@ def parse_name_status_z(raw: bytes) -> dict[str, str]:
     return changes
 
 
-def parse_porcelain_z(raw: bytes) -> dict[str, str]:
-    """Parses `git status --porcelain=v1 -z` output into {path: status_letter}."""
-    parts = raw.decode("utf-8", errors="replace").split("\0")
-    changes: dict[str, str] = {}
-    i = 0
-    while i < len(parts):
-        entry = parts[i]
-        if len(entry) < 4:
-            i += 1
-            continue
-        xy, path = entry[:2], entry[3:]
-        if "R" in xy or "C" in xy:
-            i += 1  # the next NUL-separated field is the original path
-        if xy == "??":
-            letter = "A"
-        elif "D" in xy:
-            letter = "D"
-        else:
-            letter = "M"
-        changes[path] = letter
-        i += 1
-    return changes
-
-
 class Snapshot:
     """The set of changed paths plus how to read 'after' and 'before' content for the mode."""
 
@@ -213,13 +173,9 @@ class WorkingTreeOnly:
 # ------------------------------------------------------------------------------
 # Rules
 # ------------------------------------------------------------------------------
-def is_tracked_code_file(filepath_str: str) -> bool:
-    if filepath_str in EXEMPT_FILES:
-        return False
-    path = Path(filepath_str)
-    if any(part in IGNORED_DIRS for part in path.parts):
-        return False
-    return path.suffix in CODE_EXTENSIONS
+def is_tracked_code_file(filepath_str: str, include_eden: bool = False) -> bool:
+    """E.D.E.N.'s own scripts count only in the protocol repo itself (installed copies are managed)."""
+    return is_source_file(filepath_str, include_eden=include_eden)
 
 
 def strip_non_content(markdown: str) -> str:
@@ -335,6 +291,86 @@ def run_verify(root: Path) -> tuple[bool, str]:
 
 
 # ------------------------------------------------------------------------------
+# Doctor: what each tool will load, and what is still unfinished
+# ------------------------------------------------------------------------------
+TOOL_FILES = {
+    "Google Antigravity": ["AGENTS.md", "GEMINI.md", ".agents/hooks.json", ".agents/skills"],
+    "Cursor": ["AGENTS.md", ".cursor/rules/eden.mdc", ".cursor/hooks.json", ".agents/skills"],
+    "Grok Build": ["AGENTS.md", "CLAUDE.md", ".cursor/hooks.json", ".agents/skills"],
+    "VS Code / Copilot": [".github/copilot-instructions.md", "AGENTS.md", ".github/hooks/eden.json",
+                          ".agents/skills"],
+}
+HOOK_CONFIGS = [".cursor/hooks.json", ".github/hooks/eden.json", ".agents/hooks.json"]
+DOUBLE_RUN_CONFIGS = [".grok/hooks", ".claude/settings.json", ".claude/settings.local.json"]
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _describe(root: Path, rel: str) -> str:
+    path = root / rel
+    if path.is_dir():
+        skills = sorted(p.parent.name for p in path.glob("*/SKILL.md"))
+        return f"present ({', '.join(skills) or 'no skills'})"
+    if not path.is_file():
+        return "missing"
+    text = _read(path)
+    if rel.endswith(".json"):
+        return "present, runs eden-hook.py" if "eden-hook.py" in text else "present, NO E.D.E.N. stop hook"
+    if rel == "AGENTS.md":
+        return "present, E.D.E.N. rules" if "E.D.E.N." in text else "present, NO E.D.E.N. rules"
+    return "present" if "AGENTS.md" in text or "E.D.E.N." in text else "present, no E.D.E.N. pointer"
+
+
+def doctor(root: Path) -> int:
+    print(f"[EDEN-DOCTOR] {root}")
+    problems: list[str] = []
+    for tool, files in TOOL_FILES.items():
+        print(f"  {tool}:")
+        for rel in files:
+            desc = _describe(root, rel)
+            print(f"    {rel:<34} {desc}")
+    agents = _read(root / "AGENTS.md")
+    if not agents:
+        problems.append("AGENTS.md is missing; every tool's pointer leads nowhere. Re-run init-eden.")
+    elif "E.D.E.N." not in agents:
+        problems.append("AGENTS.md has no E.D.E.N. rules. Re-run init-eden --adopt to merge the EDEN block.")
+    for rel in HOOK_CONFIGS:
+        if (root / rel).is_file() and "eden-hook.py" in _read(root / rel) and \
+                not (root / "scripts/eden-hook.py").is_file():
+            problems.append(f"{rel} calls scripts/eden-hook.py, which is missing.")
+    for rel in DOUBLE_RUN_CONFIGS:
+        path = root / rel
+        texts = [_read(p) for p in path.glob("*.json")] if path.is_dir() else [_read(path)]
+        if any("eden-hook.py" in t for t in texts):
+            problems.append(f"{rel} also runs eden-hook.py; Grok Build already runs it from "
+                            ".cursor/hooks.json, so the audit would run twice.")
+    for rel in ["AGENTS.md", ".eden/ARCHITECTURE.md", ".eden/PLAN.md"]:
+        count = len(PLACEHOLDER_RE.findall(_read(root / rel)))
+        if count:
+            problems.append(f"{rel} still has {count} `<fill in>` placeholder(s).")
+    if not (root / ".eden/verify").is_file() and not (root / ".eden/verify.py").is_file():
+        problems.append("No .eden/verify or .eden/verify.py; --verify cannot run tests.")
+    if is_git_repo(root):
+        hooks_dir = git(root, "rev-parse", "--git-path", "hooks", check=False).stdout.decode().strip()
+        hook = (root / hooks_dir / "pre-commit") if hooks_dir else None
+        if not hook or "eden-audit.py" not in _read(hook):
+            managers = [m for m in (".husky", "lefthook.yml", ".lefthook.yml", ".pre-commit-config.yaml")
+                        if (root / m).exists()]
+            where = f" (hook manager: {', '.join(managers)})" if managers else ""
+            problems.append("The git pre-commit hook does not run the audit" + where +
+                            "; add: python3 scripts/eden-audit.py --staged")
+    print("  Unfinished:" if problems else "  Unfinished: nothing")
+    for i, prob in enumerate(problems, 1):
+        print(f"    {i}. {prob}")
+    return 0
+
+
+# ------------------------------------------------------------------------------
 # Entry point
 # ------------------------------------------------------------------------------
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -345,6 +381,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--verify", action="store_true",
                    help="also run .eden/verify or .eden/verify.py (same as EDEN_VERIFY=1)")
     p.add_argument("--root", help="repository root (default: auto-detect)")
+    p.add_argument("--doctor", action="store_true",
+                   help="report what each agent tool will load and what is unfinished (always exits 0)")
     return p.parse_args(argv)
 
 
@@ -352,6 +390,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     root = find_repo_root(args.root)
     errors: list[str] = []
+
+    if args.doctor:
+        return doctor(root)
 
     if not (root / REGISTRY_REL).exists() or not (root / CHANGELOG_REL).exists():
         print(f"[EDEN-AUDIT] FATAL: .eden/ control plane missing at {root}. Run init-eden first.")
@@ -371,7 +412,9 @@ def main(argv: list[str] | None = None) -> int:
     registered = parse_registered_paths(registry_text)
     banned = parse_banned_imports(registry_text)
 
-    code_changes = sorted(f for f, s in snap.changes.items() if s != "D" and is_tracked_code_file(f))
+    include_eden = is_protocol_repo(root)
+    code_changes = sorted(f for f, s in snap.changes.items()
+                          if s != "D" and is_tracked_code_file(f, include_eden))
 
     for code_file in code_changes:
         if code_file not in registered:

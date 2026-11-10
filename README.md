@@ -71,62 +71,76 @@ flowchart LR
 
 ```text
 my-project/
-├── AGENTS.md                  # Master Agent Operating System & Architecture Rules
-├── CLAUDE.md                  # Universal Forwarder Trampoline -> AGENTS.md
-├── .cursorrules               # Universal Forwarder Trampoline -> AGENTS.md
-├── .cursor/rules/eden.mdc     # Cursor Rules Trampoline
-├── .windsurfrules             # Universal Forwarder Trampoline -> AGENTS.md
+├── AGENTS.md                  # The rules every agent reads (or an EDEN block inside your own AGENTS.md)
+├── GEMINI.md                  # Antigravity / Gemini pointer -> AGENTS.md
+├── .cursor/
+│   ├── rules/eden.mdc         # Cursor rule pointer -> AGENTS.md
+│   └── hooks.json             # Stop hook for Cursor AND Grok Build
 ├── .github/
-│   └── copilot-instructions.md# Copilot Trampoline -> AGENTS.md
-├── GEMINI.md                  # Gemini / Antigravity Trampoline -> AGENTS.md
+│   ├── copilot-instructions.md# Copilot pointer -> AGENTS.md
+│   └── hooks/eden.json        # Stop hook for Copilot (CLI, cloud agent, VS Code)
+├── .agents/
+│   ├── hooks.json             # Stop hook for Antigravity
+│   └── skills/                # eden-normalize, eden-architect, eden-adopt (shared Agent Skills)
 ├── .eden/
 │   ├── ARCHITECTURE.md        # Runtime, limits, data flow, invariants
 │   ├── REGISTRY.md            # Anti-Duplication Component & Dependency Map
 │   ├── PLAN.md                # Active sprint backlog & task acceptance criteria
 │   ├── LEARNINGS.md           # Episodic memory of bugs, pitfalls, and fixes
 │   ├── CHANGELOG_AGENT.jsonl  # Append-only machine-readable mutation history
-│   └── verify / verify.py     # Optional: project test + lint commands run by audit --verify
-├── scripts/
-│   ├── eden-audit.py          # Zero-dependency compliance auditor
-│   └── eden-index.py          # Zero-dependency AST/regex component indexer
-└── docs/                      # Human & project documentation
+│   └── verify / verify.py     # Project lint + test commands run by audit --verify (generated on adopt)
+└── scripts/
+    ├── eden-audit.py          # Compliance auditor (--staged, --base, --verify, --doctor)
+    ├── eden-index.py          # Component indexer for REGISTRY.md
+    ├── eden-hook.py           # Stop hook: audits changed source before the agent may finish
+    └── eden_common.py         # Shared extension and ignore lists
 ```
 
-The protocol repository itself also contains `templates/` (the `.eden/` starter files and the pre-commit hook copied by the init scripts) and `tests/` (stdlib `unittest` smoke tests).
+Opt-in extras: `CLAUDE.md` (`--tools ...,claude`, or merged automatically when you already have one) and the legacy `.cursorrules` / `.windsurfrules` (`--legacy`). The protocol repository itself also contains `templates/`, `scripts/eden-install.py` (the installer the init scripts call), and `tests/` (stdlib `unittest`).
 
 ---
 
 ## 5. Quickstart
 
-### Bootstrapping a Repository
-Clone this repository once, then run its bootstrapper from the root of the repository you want to govern (or pass that path):
+### New project or existing project?
 
-**Linux / macOS / Termux / PRoot / WSL:**
+| Your repository | Run | What happens |
+| :--- | :--- | :--- |
+| Empty, or no commits yet | `init-eden.sh --new` | Full `AGENTS.md` and pointer files are written. Fill in Commands yourself, or add `--detect`. |
+| Has code or history | `init-eden.sh --adopt` | Your `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and `copilot-instructions.md` keep their text; E.D.E.N. adds an `<!-- EDEN:BEGIN v1 -->` ... `<!-- EDEN:END -->` block. Commands and `.eden/verify` are detected from `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `gradlew`, or `Makefile`, and existing code is indexed into the registry. |
+| Not sure | `init-eden.sh` | Picks `--new` when there are no commits and no source files, otherwise `--adopt`. |
+
+Re-running is safe: up-to-date files are left alone, the EDEN block is updated in place, and the changelog only gets a line when something changed. `--force` replaces E.D.E.N.-managed files wholesale (backups as `<file>.eden-bak`); `.eden/` state is never replaced.
+
+**Linux / macOS / Termux / WSL / Git Bash:**
 ```bash
-/path/to/E.D.E.N-Protocol/init-eden.sh [--force] [--name NAME] [TARGET_DIR]
+/path/to/E.D.E.N-Protocol/init-eden.sh [--new|--adopt] [--tools antigravity,cursor,grok,vscode] [--legacy] [--force] [TARGET_DIR]
 ```
 
-**Windows PowerShell:**
+**Windows PowerShell** (GNU-style `--adopt` options work too):
 ```powershell
-C:\path\to\E.D.E.N-Protocol\init-eden.ps1 [-Force] [-ProjectName NAME] [TargetDir]
+C:\path\to\E.D.E.N-Protocol\init-eden.ps1 [-New|-Adopt] [-Tools cursor,vscode] [-Legacy] [-Force] [TargetDir]
 ```
 
-The bootstrapper (target defaults to the current directory):
-1. Copies `AGENTS.md` and the pointer files for Claude Code, Cursor, Copilot, Gemini/Antigravity, and Windsurf (byte-for-byte; no drift).
-2. Copies `scripts/eden-audit.py` and `scripts/eden-index.py`.
-3. Creates `.eden/` from `templates/eden/` and starts `.eden/CHANGELOG_AGENT.jsonl`.
-4. Installs the pre-commit hook (`eden-audit.py --staged`).
-5. Runs `eden-index.py` to index existing source files.
+Both need Python 3 (found as `python3`, `python`, or `py -3`). `--tools` defaults to all four of `antigravity,cursor,grok,vscode`; add `claude` for a `CLAUDE.md`. If you use husky, lefthook, or pre-commit, the git hook is not installed; add `python3 scripts/eden-audit.py --staged` to that tool's pre-commit step. Set `EDEN_RAW_BASE` to a raw-file URL of this repository to download the files instead of using a local clone.
 
-Existing files are never overwritten unless you pass `--force` / `-Force`; replaced files are kept as `<file>.eden-bak`, and existing `.eden/` state is always kept. Set `EDEN_RAW_BASE` to a raw-file URL of this repository to download the files instead of using a local clone.
+Afterwards, `python3 scripts/eden-audit.py --doctor` shows what each tool will load and what is still unfinished.
 
-Then fill in the `Commands` section of `AGENTS.md` and `.eden/ARCHITECTURE.md`, and optionally add `.eden/verify` with your test and lint commands.
+### Per-tool setup
+
+Every tool reads `AGENTS.md`, uses the skills in `.agents/skills/`, and runs `scripts/eden-hook.py` when the agent tries to finish. The hook audits only when source files changed, and forces at most 2 extra rounds before letting the agent stop and report (matching the "3 rounds, then report" rule). Set `EDEN_HOOK_VERIFY=1` to also run `.eden/verify` in the hook, or `EDEN_HOOK_DISABLE=1` to turn it off.
+
+* **Google Antigravity** - reads `AGENTS.md` and `GEMINI.md`, the skills in `.agents/skills/`, and the Stop hook in `.agents/hooks.json`. Open the repository root as the workspace.
+* **Cursor** - reads `AGENTS.md` and `.cursor/rules/eden.mdc`; the stop hook is in `.cursor/hooks.json`. Check it under Settings > Hooks.
+* **Grok Build** - reads `AGENTS.md`, `.agents/skills/`, and the hooks in `.cursor/hooks.json`. Project hooks only run in a trusted folder: start with `grok --trust` (or run `/hooks-trust` once), and use `grok inspect` to confirm the hook and skills loaded. Do not also add `.grok/hooks/` or `.claude/settings.json` hooks, or the audit runs twice (`--doctor` warns about this).
+* **VS Code / GitHub Copilot** - reads `.github/copilot-instructions.md` and `AGENTS.md`; `.github/hooks/eden.json` serves Copilot CLI, the Copilot cloud agent, and VS Code agent mode (where agent hooks are enabled). The file has a separate `powershell` command for Windows.
 
 ### Verifying Compliance
 ```bash
 python3 scripts/eden-audit.py                  # working tree, including new untracked folders
 python3 scripts/eden-audit.py --staged         # what the pre-commit hook runs
 python3 scripts/eden-audit.py --base origin/main --verify   # CI
+python3 scripts/eden-audit.py --doctor         # per-tool setup report; always exits 0
 ```
 
 ### Testing this repository
@@ -139,9 +153,9 @@ python3 -m unittest discover -s tests          # or: python3 scripts/eden-audit.
 ## 6. Documentation Suite
 
 * [**Protocol Specification**](docs/SPECIFICATION.md) — Complete specification of the `.eden/` control plane, JSONL schemas, and lifecycle rules.
-* [**Multi-Agent Routing**](docs/MULTI_AGENT_ROUTING.md) — How forwarder trampolines ensure zero-drift execution across Claude, Cursor, Copilot, Gemini, and Windsurf.
-* [**CLI & Compliance Auditing**](docs/CLI_AND_AUDITING.md) — Reference for `eden-audit.py`, `eden-index.py`, Git hooks, and CI/CD integration.
-* [**Migration & Retrofit Guide**](docs/MIGRATION_GUIDE.md) — How to clean up existing doc sprawl and migrate legacy codebases to E.D.E.N.
+* [**Multi-Agent Routing**](docs/MULTI_AGENT_ROUTING.md) — Which files and hooks each tool (Antigravity, Cursor, Grok Build, VS Code/Copilot) loads, and how pointer files avoid drift.
+* [**CLI & Compliance Auditing**](docs/CLI_AND_AUDITING.md) — Reference for `eden-audit.py`, `eden-index.py`, `eden-hook.py`, Git hooks, and CI/CD integration.
+* [**Migration & Retrofit Guide**](docs/MIGRATION_GUIDE.md) — Adopting E.D.E.N. in an existing codebase with `--adopt` and merge markers.
 
 ---
 

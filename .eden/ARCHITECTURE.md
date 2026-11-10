@@ -1,6 +1,6 @@
 # ARCHITECTURE - E.D.E.N.-Protocol
 
-This repository is the protocol itself: agent instruction files, `.eden/` templates, a bootstrapper, and two zero-dependency Python tools.
+This repository is the protocol itself: agent instruction files, `.eden/` templates, shared skills and stop-hook configs, a bootstrapper, and zero-dependency Python tools.
 
 ## Runtime & Environment
 - Languages and versions: Python 3.9+ (stdlib only), POSIX `bash`, PowerShell 5.1+ / 7+.
@@ -13,13 +13,16 @@ This repository is the protocol itself: agent instruction files, `.eden/` templa
 
 ## Core Data Flow
 ```text
-[protocol checkout] --init-eden.sh/.ps1--> [target repo: AGENTS.md, pointers, scripts/, .eden/, pre-commit]
+[protocol checkout] --init-eden.sh/.ps1 -> eden-install.py--> [target repo: AGENTS.md (full or EDEN block), pointers, hook configs, .agents/skills, scripts/, .eden/, pre-commit]
+[agent stop event JSON] --eden-hook.py--> [eden-audit.py when source changed] -> per-tool allow / keep-working reply
 [git status / index / base...HEAD] --eden-audit.py--> [REGISTRY + CHANGELOG checks, optional .eden/verify] -> exit 0/1
 [source files] --eden-index.py--> [.eden/REGISTRY.md section 2]
 ```
 
 ## Invariants
-- `AGENTS.md` and the six pointer files at the repo root are the only copies; init scripts copy them byte-for-byte.
+- `AGENTS.md`, the pointer files, hook configs, and skills in this repo are the only copies; the installer copies them byte-for-byte (new mode) or merges them between `<!-- EDEN:BEGIN v1 -->` and `<!-- EDEN:END -->` (adopt mode), never touching text outside the markers.
+- Source extensions and ignored folders are defined once, in `scripts/eden_common.py`.
+- The stop hook fails open and forces at most 2 extra rounds per user turn. Only one hook config per tool runs it (no `.grok/hooks` or `.claude/settings.json`), so the audit never runs twice.
 - Agent-facing files and `init-eden.ps1` are ASCII-only with no BOM.
-- Init never overwrites an existing file without `--force` / `-Force`, and never overwrites existing `.eden/` state.
+- Init never overwrites an existing file without `--force` / `-Force`, never overwrites existing `.eden/` state, and a re-run with the same options changes nothing.
 - No third-party dependencies in `scripts/` or `tests/`.

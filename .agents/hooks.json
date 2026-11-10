@@ -1,0 +1,11 @@
+{
+  "eden-stop-gate": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 scripts/eden-hook.py --tool antigravity || python scripts/eden-hook.py --tool antigravity || py -3 scripts/eden-hook.py --tool antigravity",
+        "timeout": 120
+      }
+    ]
+  }
+}

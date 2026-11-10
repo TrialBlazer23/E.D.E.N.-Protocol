@@ -1,59 +1,107 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    E.D.E.N. Protocol bootstrapper (PowerShell 5.1+ / PowerShell 7+).
+    E.D.E.N. Protocol bootstrapper (PowerShell 5.1+ / PowerShell 7+). Needs Python 3.
 
 .DESCRIPTION
-    Copies AGENTS.md, the agent pointer files, scripts/eden-audit.py, scripts/eden-index.py,
-    the .eden/ templates, and the pre-commit hook from this protocol checkout into the target
-    repository. Existing files are never overwritten unless -Force is given; with -Force each
-    replaced file is backed up as <file>.eden-bak. Existing .eden/ state files (ARCHITECTURE,
-    PLAN, REGISTRY, LEARNINGS, CHANGELOG_AGENT.jsonl) are always kept, even with -Force.
+    Installs AGENTS.md, the per-tool instruction and hook files, the scripts, the shared
+    .agents/skills, the .eden/ control plane, and the pre-commit hook into the target
+    repository. The work is done by scripts/eden-install.py; this wrapper finds Python
+    (python3, then python, then py -3) and passes the options through.
 
+    New mode writes full files. Adopt mode merges an <!-- EDEN:BEGIN v1 --> ... <!-- EDEN:END -->
+    block into an existing AGENTS.md, CLAUDE.md, GEMINI.md, or .github/copilot-instructions.md
+    (text outside the markers is kept) and detects the Setup/Build/Test/Lint commands.
+    Re-running is safe. Existing .eden/ state files are always kept, even with -Force.
+
+    GNU-style options (--adopt, --tools cursor,grok, ...) are accepted too.
     This file is intentionally ASCII-only so Windows PowerShell 5.1 reads it correctly.
-    Files are copied byte-for-byte; generated files are written as UTF-8 without BOM.
 
 .PARAMETER TargetDir
     Repository to initialize. Defaults to the current directory.
+.PARAMETER New
+    Brand-new project: write full files. Default when the target has no commits and no source files.
+.PARAMETER Adopt
+    Existing project: merge EDEN blocks and detect commands. Default otherwise.
+.PARAMETER Tools
+    Comma-separated: antigravity,cursor,grok,vscode,claude. Default: antigravity,cursor,grok,vscode.
+.PARAMETER Legacy
+    Also write .cursorrules and .windsurfrules.
+.PARAMETER Force
+    Replace E.D.E.N.-managed files wholesale (each backed up as <file>.eden-bak).
+.PARAMETER Detect
+    Detect commands in new mode too. -NoDetect turns detection off.
+.PARAMETER Reindex
+    Regenerate section 2 of an existing .eden/REGISTRY.md.
 .PARAMETER SourceDir
     Protocol checkout to copy from. Defaults to the folder holding this script.
 .PARAMETER ProjectName
     Name used in .eden/ARCHITECTURE.md. Defaults to the target folder name.
-.PARAMETER Force
-    Overwrite existing files (with backups).
 
 .EXAMPLE
-    C:\src\E.D.E.N-Protocol\init-eden.ps1            # run from inside your repo
-    C:\src\E.D.E.N-Protocol\init-eden.ps1 C:\src\app
+    C:\src\E.D.E.N-Protocol\init-eden.ps1                      # run from inside your repo
+    C:\src\E.D.E.N-Protocol\init-eden.ps1 C:\src\app -Adopt -Tools cursor,vscode
 #>
 param(
     [Parameter(Position = 0)][string]$TargetDir = (Get-Location).Path,
+    [switch]$New,
+    [switch]$Adopt,
+    [string]$Tools = "",
+    [switch]$Legacy,
+    [switch]$Force,
+    [switch]$Detect,
+    [switch]$NoDetect,
+    [switch]$Reindex,
     [string]$SourceDir = $PSScriptRoot,
     [string]$ProjectName = "",
-    [switch]$Force
+    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
 $ErrorActionPreference = "Stop"
-$Utf8NoBom = New-Object System.Text.UTF8Encoding $false
-$IsWindowsHost = ($env:OS -eq "Windows_NT")
 
-$CopyFiles = @(
+# Files the installer reads from the protocol checkout (keep in sync with scripts/eden-install.py).
+$SourceFiles = @(
     "AGENTS.md", "CLAUDE.md", "GEMINI.md", ".cursorrules", ".windsurfrules",
     ".cursor/rules/eden.mdc", ".github/copilot-instructions.md",
-    "scripts/eden-audit.py", "scripts/eden-index.py"
-)
-$TemplateFiles = @(
+    "scripts/eden-audit.py", "scripts/eden-index.py", "scripts/eden-hook.py",
+    "scripts/eden_common.py", "scripts/eden-install.py",
+    ".cursor/hooks.json", ".github/hooks/eden.json", ".agents/hooks.json",
+    ".agents/skills/eden-normalize/SKILL.md", ".agents/skills/eden-architect/SKILL.md",
+    ".agents/skills/eden-adopt/SKILL.md",
     "templates/eden/ARCHITECTURE.md", "templates/eden/PLAN.md", "templates/eden/REGISTRY.md",
     "templates/eden/LEARNINGS.md", "templates/hooks/pre-commit"
 )
 
+# Options for the installer. GNU-style arguments (--adopt, --tools x) are passed through as-is.
+$InstallArgs = @()
+if ($New) { $InstallArgs += "--new" }
+if ($Adopt) { $InstallArgs += "--adopt" }
+if ($Tools) { $InstallArgs += @("--tools", $Tools) }
+if ($Legacy) { $InstallArgs += "--legacy" }
+if ($Force) { $InstallArgs += "--force" }
+if ($Detect) { $InstallArgs += "--detect" }
+if ($NoDetect) { $InstallArgs += "--no-detect" }
+if ($Reindex) { $InstallArgs += "--reindex" }
+if ($ProjectName) { $InstallArgs += @("--name", $ProjectName) }
+if ($TargetDir.StartsWith("--")) {
+    # A GNU-style option landed in the positional slot.
+    $Rest = @($TargetDir) + $Rest
+    $TargetDir = (Get-Location).Path
+}
+for ($i = 0; $i -lt $Rest.Count; $i++) {
+    $a = $Rest[$i]
+    if ($a -eq "--source") { $SourceDir = $Rest[$i + 1]; $i++ }
+    elseif ($a -in @("--tools", "--name")) { $InstallArgs += @($a, $Rest[$i + 1]); $i++ }
+    elseif ($a.StartsWith("--")) { $InstallArgs += $a }
+    else { $TargetDir = $a }
+}
+
 if (-not (Test-Path $TargetDir)) { New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null }
 $TargetDir = (Resolve-Path $TargetDir).Path
-if (-not $ProjectName) { $ProjectName = Split-Path -Leaf $TargetDir }
 
 # Fetch the protocol files if the source folder does not have them.
 $TempSource = $null
-if (-not $SourceDir -or -not (Test-Path (Join-Path $SourceDir "scripts/eden-audit.py")) -or
+if (-not $SourceDir -or -not (Test-Path (Join-Path $SourceDir "scripts/eden-install.py")) -or
     -not (Test-Path (Join-Path $SourceDir "templates/hooks/pre-commit"))) {
     if (-not $env:EDEN_RAW_BASE) {
         Write-Error ("'$SourceDir' is not an E.D.E.N.-Protocol checkout (scripts/ or templates/ missing). " +
@@ -61,7 +109,7 @@ if (-not $SourceDir -or -not (Test-Path (Join-Path $SourceDir "scripts/eden-audi
     }
     $TempSource = Join-Path ([System.IO.Path]::GetTempPath()) ("eden-" + [guid]::NewGuid())
     Write-Host "Downloading protocol files from $($env:EDEN_RAW_BASE)"
-    foreach ($f in $CopyFiles + $TemplateFiles) {
+    foreach ($f in $SourceFiles) {
         $dest = Join-Path $TempSource $f
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null
         Invoke-WebRequest -UseBasicParsing -Uri "$($env:EDEN_RAW_BASE)/$f" -OutFile $dest
@@ -74,123 +122,26 @@ if ($SourceDir -eq $TargetDir) {
     Write-Error "Target is the protocol repo itself. Run this from (or point it at) the repo you want to initialize."
 }
 
-Set-Location $TargetDir
-Write-Host "Initializing E.D.E.N. Protocol in $TargetDir (project: $ProjectName)" -ForegroundColor Cyan
-
-$script:Skipped = $false
-$script:Backups = $false
-
-function Test-SameContent([string]$A, [string]$B) {
-    $ba = [System.IO.File]::ReadAllBytes($A)
-    $bb = [System.IO.File]::ReadAllBytes($B)
-    if ($ba.Length -ne $bb.Length) { return $false }
-    for ($i = 0; $i -lt $ba.Length; $i++) { if ($ba[$i] -ne $bb[$i]) { return $false } }
-    return $true
+# Python 3 discovery: python3, then python, then the py -3 launcher. Each candidate is probed,
+# which skips the Windows Store "python" stub that only opens the Store.
+$PyExe = $null
+$PyArgs = @()
+foreach ($cand in @(@("python3"), @("python"), @("py", "-3"))) {
+    if (-not (Get-Command $cand[0] -ErrorAction SilentlyContinue)) { continue }
+    $probeArgs = @($cand | Select-Object -Skip 1) + @("-c", "import sys; sys.exit(sys.version_info[0] != 3)")
+    try {
+        & $cand[0] @probeArgs *> $null
+        if ($LASTEXITCODE -eq 0) { $PyExe = $cand[0]; $PyArgs = @($cand | Select-Object -Skip 1); break }
+    } catch { }
+}
+if (-not $PyExe) {
+    Write-Error "Python 3 not found (tried python3, python, py -3). Install Python 3 and re-run."
 }
 
-# Writes $Bytes to $Dest unless it exists (then skip, or back up and replace with -Force).
-# -NeverReplace keeps existing project state files even with -Force.
-function Install-Bytes([byte[]]$Bytes, [string]$Dest, [switch]$NeverReplace, [switch]$Executable) {
-    $full = Join-Path $TargetDir $Dest
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $full) | Out-Null
-    if (Test-Path $full) {
-        $tmp = [System.IO.Path]::GetTempFileName()
-        [System.IO.File]::WriteAllBytes($tmp, $Bytes)
-        $same = Test-SameContent $tmp $full
-        Remove-Item $tmp
-        if ($same) { Write-Host "  [=] $Dest (already up to date)"; return }
-        if ($NeverReplace) { Write-Host "  [=] $Dest exists (project state; kept)"; return }
-        if (-not $Force) {
-            Write-Host "  [~] $Dest exists; skipped (re-run with -Force to replace it; a backup is kept)" -ForegroundColor Yellow
-            $script:Skipped = $true
-            return
-        }
-        Copy-Item -Force $full "$full.eden-bak"
-        $script:Backups = $true
-        Write-Host "  [!] $Dest replaced (backup: $Dest.eden-bak)" -ForegroundColor Yellow
-    } else {
-        Write-Host "  [+] $Dest" -ForegroundColor Green
-    }
-    [System.IO.File]::WriteAllBytes($full, $Bytes)
-    if ($Executable -and -not $IsWindowsHost -and (Get-Command chmod -ErrorAction SilentlyContinue)) {
-        & chmod 755 $full
-    }
+try {
+    & $PyExe @PyArgs (Join-Path $SourceDir "scripts/eden-install.py") --source $SourceDir --target $TargetDir @InstallArgs
+    $code = $LASTEXITCODE
+} finally {
+    if ($TempSource) { Remove-Item -Recurse -Force $TempSource -ErrorAction SilentlyContinue }
 }
-
-function Get-SourceBytes([string]$Rel) {
-    return [System.IO.File]::ReadAllBytes((Join-Path $SourceDir $Rel))
-}
-
-# Normalizes to LF and encodes as UTF-8 without BOM (needed for the sh hook on Windows checkouts).
-function ConvertTo-LfBytes([byte[]]$Bytes) {
-    $text = $Utf8NoBom.GetString($Bytes).TrimStart([char]0xFEFF) -replace "`r`n", "`n"
-    return $Utf8NoBom.GetBytes($text)
-}
-
-# 1. Agent instructions, pointer files, and tooling
-foreach ($f in $CopyFiles) {
-    if ($f -like "scripts/*") { Install-Bytes (Get-SourceBytes $f) $f -Executable }
-    else { Install-Bytes (Get-SourceBytes $f) $f }
-}
-
-# 2. Control plane templates
-$arch = $Utf8NoBom.GetString((Get-SourceBytes "templates/eden/ARCHITECTURE.md")).Replace("{{PROJECT_NAME}}", $ProjectName)
-Install-Bytes ($Utf8NoBom.GetBytes($arch)) ".eden/ARCHITECTURE.md" -NeverReplace
-foreach ($f in @("PLAN.md", "REGISTRY.md", "LEARNINGS.md")) {
-    Install-Bytes (Get-SourceBytes "templates/eden/$f") ".eden/$f" -NeverReplace
-}
-
-$changelog = Join-Path $TargetDir ".eden/CHANGELOG_AGENT.jsonl"
-if (-not (Test-Path $changelog) -or (Get-Item $changelog).Length -eq 0) {
-    $ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-    $line = '{"timestamp":"' + $ts + '","phase":"Normalize","task_id":"TASK-00","action":"CREATED","files":["AGENTS.md",".eden/ARCHITECTURE.md",".eden/PLAN.md",".eden/REGISTRY.md",".eden/LEARNINGS.md"],"reused_modules":[],"summary":"Initialized the E.D.E.N. control plane."}' + "`n"
-    [System.IO.File]::WriteAllText($changelog, $line, $Utf8NoBom)
-    Write-Host "  [+] .eden/CHANGELOG_AGENT.jsonl" -ForegroundColor Green
-} else {
-    Write-Host "  [=] .eden/CHANGELOG_AGENT.jsonl (kept; append-only)"
-}
-
-# 3. Git pre-commit hook (respects core.hooksPath and worktrees)
-$hooksDir = $null
-if (Get-Command git -ErrorAction SilentlyContinue) {
-    $hooksDir = (& git rev-parse --git-path hooks 2>$null)
-    if ($LASTEXITCODE -ne 0) { $hooksDir = $null }
-}
-if ($hooksDir) {
-    $hookRel = (Join-Path $hooksDir "pre-commit")
-    if ([System.IO.Path]::IsPathRooted($hookRel)) {
-        $hookRel = $hookRel.Substring($TargetDir.Length).TrimStart('\', '/')
-    }
-    Install-Bytes (ConvertTo-LfBytes (Get-SourceBytes "templates/hooks/pre-commit")) $hookRel -Executable
-    $hookText = Get-Content -Raw (Join-Path $TargetDir $hookRel)
-    if ($hookText -notmatch "eden-audit\.py") {
-        Write-Host "      Your existing hook does not run the audit. Add this line to it:"
-        Write-Host "      python3 scripts/eden-audit.py --staged || exit 1"
-    } elseif ($hookText -notmatch "--staged") {
-        Write-Host "      Your hook runs the audit without --staged; re-run with -Force to install the current hook."
-    }
-} else {
-    Write-Host "  [-] Not a git repository; pre-commit hook not installed (run 'git init' and re-run)."
-}
-
-# 4. Index existing source files into .eden/REGISTRY.md
-$py = $null
-foreach ($candidate in @("python3", "python", "py")) {
-    if (Get-Command $candidate -ErrorAction SilentlyContinue) { $py = $candidate; break }
-}
-if ($py) {
-    & $py (Join-Path $TargetDir "scripts/eden-index.py") $TargetDir
-} else {
-    Write-Host "  [-] Python 3 not found; skipped indexing. Install Python 3 to use the audit."
-}
-
-if ($TempSource) { Remove-Item -Recurse -Force $TempSource }
-
-Write-Host "Done. Next: fill in the Commands section of AGENTS.md and .eden/ARCHITECTURE.md, then run:" -ForegroundColor Green
-Write-Host "  python3 scripts/eden-audit.py"
-if ($script:Backups) {
-    Write-Host "Review and delete the *.eden-bak backups before committing." -ForegroundColor Yellow
-}
-if ($script:Skipped) {
-    Write-Host "Some files already existed and were left unchanged (see [~] above). Use -Force to replace them." -ForegroundColor Yellow
-}
+exit $code

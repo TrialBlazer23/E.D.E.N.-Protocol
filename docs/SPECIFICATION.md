@@ -88,4 +88,4 @@ A project may add `.eden/verify` (shell script) or `.eden/verify.py` with its te
 
 ## 4. Multi-Agent Interoperability
 
-Because different coding tools search for proprietary instruction files, E.D.E.N. uses universal forwarder trampolines that route every tool directly into `AGENTS.md` and `.eden/`. The pointer files are ASCII-only, have no BOM, and are copied byte-for-byte by the init scripts. See `docs/MULTI_AGENT_ROUTING.md` for details.
+Because different coding tools search for proprietary instruction files, E.D.E.N. uses universal forwarder trampolines that route every tool directly into `AGENTS.md` and `.eden/`. The pointer files are ASCII-only, have no BOM, and are copied byte-for-byte by the init scripts; in an existing project they are merged as an `<!-- EDEN:BEGIN v1 -->` ... `<!-- EDEN:END -->` block instead. Each supported tool also gets a stop hook config that runs `scripts/eden-hook.py`, and all tools share the skills in `.agents/skills/`. See `docs/MULTI_AGENT_ROUTING.md` for details.
